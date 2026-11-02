@@ -21,4 +21,18 @@ export interface RouteSpec {
  */
 export const ROUTES: RouteSpec[] = [
   { method: 'GET', path: '/health', access: 'public', load: () => import('@/app/api/v1/health/route') },
+  {
+    method: 'POST',
+    path: '/setup',
+    access: 'public',
+    load: () => import('@/app/api/v1/setup/route'),
+    sampleBody: {
+      name: 'Owner',
+      email: 'owner@example.com',
+      password: 'Zq9!vt-plume-orbit',
+      storeName: 'Avenue',
+      currency: 'EGP',
+      setupToken: 'test-setup-token',
+    },
+  },
 ];

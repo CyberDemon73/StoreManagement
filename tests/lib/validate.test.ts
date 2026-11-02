@@ -33,7 +33,7 @@ describe('parse', () => {
     const err = await expectAppError(parse(schema, req(JSON.stringify({ a: 'x', b: 1 }))));
     expect(err.code).toBe('VALIDATION');
     expect(err.status).toBe(400);
-    expect(err.fields?.b ?? err.fields?._).toBeTypeOf('string');
+    expect(err.fields?.b).toBe('Unknown field');
   });
 
   it('rejects invalid JSON with a clear message, not a 500', async () => {

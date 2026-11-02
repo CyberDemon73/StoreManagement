@@ -16,7 +16,16 @@ export function noContent(headers?: HeadersInit): Response {
 export function zodFields(err: ZodError): Record<string, string> {
   const fields: Record<string, string> = {};
   for (const issue of err.issues) {
-    const key = issue.path.map(String).join('.') || '_';
+    const prefix = issue.path.map(String).join('.');
+    // Strict schemas report unknown keys as one root issue; surface each key by name instead.
+    if (issue.code === 'unrecognized_keys') {
+      for (const k of issue.keys) {
+        const key = prefix ? `${prefix}.${k}` : k;
+        if (!(key in fields)) fields[key] = 'Unknown field';
+      }
+      continue;
+    }
+    const key = prefix || '_';
     if (!(key in fields)) fields[key] = issue.message;
   }
   return fields;

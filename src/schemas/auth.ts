@@ -1,8 +1,21 @@
 import { z } from 'zod';
 import { isCommonPassword } from '@/lib/password';
+import { emailSchema } from './common';
 
 export const passwordSchema = z
   .string()
   .min(10, 'Password must be at least 10 characters')
   .max(128, 'Password must be at most 128 characters')
   .refine((p) => !isCommonPassword(p), { message: 'Password is too common' });
+
+export const setupBody = z
+  .object({
+    name: z.string().trim().min(1).max(100),
+    email: emailSchema,
+    password: passwordSchema,
+    storeName: z.string().trim().min(1).max(100),
+    currency: z.string().trim().toUpperCase().length(3),
+    setupToken: z.string().min(1),
+  })
+  .strict();
+export type SetupInput = z.infer<typeof setupBody>;
