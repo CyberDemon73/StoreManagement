@@ -44,4 +44,18 @@ export const ROUTES: RouteSpec[] = [
   },
   { method: 'POST', path: '/auth/logout', access: 'auth', load: () => import('@/app/api/v1/auth/logout/route') },
   { method: 'GET', path: '/auth/me', access: 'auth', load: () => import('@/app/api/v1/auth/me/route') },
+  {
+    method: 'POST',
+    path: '/auth/forgot',
+    access: 'public',
+    load: () => import('@/app/api/v1/auth/forgot/route'),
+    sampleBody: { email: 'nobody@example.com' },
+  },
+  {
+    method: 'POST',
+    path: '/auth/reset',
+    access: 'public',
+    load: () => import('@/app/api/v1/auth/reset/route'),
+    sampleBody: { token: 'x'.repeat(43), password: 'Zq9!vt-plume-orbit' },
+  },
 ];

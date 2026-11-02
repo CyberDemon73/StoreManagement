@@ -28,3 +28,14 @@ export const loginBody = z
   })
   .strict();
 export type LoginInput = z.infer<typeof loginBody>;
+
+export const forgotBody = z.object({ email: emailSchema }).strict();
+export type ForgotInput = z.infer<typeof forgotBody>;
+
+export const resetBody = z
+  .object({
+    token: z.string().min(20).max(200),
+    password: passwordSchema,
+  })
+  .strict();
+export type ResetInput = z.infer<typeof resetBody>;

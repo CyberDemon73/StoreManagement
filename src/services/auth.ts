@@ -1,15 +1,25 @@
 import { timingSafeEqual } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { Db } from '@/db/client';
-import { users } from '@/db/schema';
+import { passwordResetTokens, users } from '@/db/schema';
 import { audit } from '@/lib/audit';
-import { createSession, revokeSession, type AuthUser, type NewSession, type ReqCtx } from '@/lib/auth';
+import {
+  createSession,
+  generateToken,
+  hashToken,
+  revokeAllSessions,
+  revokeSession,
+  type AuthUser,
+  type NewSession,
+  type ReqCtx,
+} from '@/lib/auth';
+import { sendEmail } from '@/lib/email';
 import { getEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
 import { getDummyHash, hashPassword, verifyPassword } from '@/lib/password';
 import { permissionsFor, type Permission } from '@/lib/permissions';
-import { enforce, loginEmailLimiter, loginIpLimiter } from '@/lib/ratelimit';
-import type { LoginInput, SetupInput } from '@/schemas/auth';
+import { enforce, forgotEmailLimiter, loginEmailLimiter, loginIpLimiter } from '@/lib/ratelimit';
+import type { ForgotInput, LoginInput, ResetInput, SetupInput } from '@/schemas/auth';
 import { toPublicSettings, type PublicSettings } from '@/serializers/settings';
 import { toPublicUser, type PublicUser } from '@/serializers/user';
 import { clearFailures, getLockRemaining, recordFailure } from './lockout';
@@ -91,6 +101,55 @@ export async function login(
 export async function logout(db: Db, user: AuthUser, ctx: ReqCtx): Promise<void> {
   await revokeSession(db, user.sessionId);
   await audit(db, { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent }, 'auth.logout', 'user', user.id, null, null);
+}
+
+const RESET_TOKEN_TTL_MS = 30 * 60_000;
+
+/** Always resolves (204 to the client) so the response never reveals whether the email exists. */
+export async function forgot(db: Db, input: ForgotInput, ctx: ReqCtx): Promise<void> {
+  await enforce(forgotEmailLimiter, input.email);
+  const [user] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
+  if (!user || user.status !== 'ACTIVE') return;
+
+  const raw = generateToken();
+  await db.insert(passwordResetTokens).values({
+    userId: user.id,
+    tokenHash: hashToken(raw),
+    purpose: 'RESET',
+    expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
+  });
+  const link = `${getEnv().APP_URL.replace(/\/$/, '')}/reset?token=${raw}`;
+  await sendEmail({
+    to: user.email,
+    subject: 'Reset your Avenue Stock password',
+    text: `Hello ${user.name},\n\nUse this link within 30 minutes to choose a new password:\n${link}\n\nIf you did not ask for this, ignore this email.`,
+  });
+  await audit(db, { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent }, 'auth.forgot', 'user', user.id, null, null);
+}
+
+/** Single-use token: sets the password, marks the token used and revokes every session. */
+export async function reset(db: Db, input: ResetInput, ctx: ReqCtx): Promise<void> {
+  const tokenHash = hashToken(input.token);
+  const now = new Date();
+  const [row] = await db
+    .select()
+    .from(passwordResetTokens)
+    .where(and(eq(passwordResetTokens.tokenHash, tokenHash), eq(passwordResetTokens.purpose, 'RESET'), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, now)))
+    .limit(1);
+  if (!row) throw new AppError('VALIDATION', 'Invalid or expired token');
+
+  const passwordHash = await hashPassword(input.password);
+  await db.transaction(async (tx) => {
+    const [claimed] = await tx
+      .update(passwordResetTokens)
+      .set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.id, row.id), isNull(passwordResetTokens.usedAt)))
+      .returning({ id: passwordResetTokens.id });
+    if (!claimed) throw new AppError('VALIDATION', 'Invalid or expired token');
+    await tx.update(users).set({ passwordHash, mustChangePassword: false, updatedAt: now }).where(eq(users.id, row.userId));
+    await revokeAllSessions(tx, row.userId);
+    await audit(tx, { userId: row.userId, ip: ctx.ip, userAgent: ctx.userAgent }, 'user.password_reset', 'user', row.userId, null, null);
+  });
 }
 
 export interface MeResponse {
