@@ -35,4 +35,13 @@ export const ROUTES: RouteSpec[] = [
       setupToken: 'test-setup-token',
     },
   },
+  {
+    method: 'POST',
+    path: '/auth/login',
+    access: 'public',
+    load: () => import('@/app/api/v1/auth/login/route'),
+    sampleBody: { email: 'nobody@example.com', password: 'Zq9!vt-plume-orbit' },
+  },
+  { method: 'POST', path: '/auth/logout', access: 'auth', load: () => import('@/app/api/v1/auth/logout/route') },
+  { method: 'GET', path: '/auth/me', access: 'auth', load: () => import('@/app/api/v1/auth/me/route') },
 ];

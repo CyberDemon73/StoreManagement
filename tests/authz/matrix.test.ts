@@ -34,6 +34,18 @@ function discoveredRoutes(): string[] {
   return out.sort();
 }
 
+/** 401 emitted by withAuth itself (missing session), as opposed to a route's own 401 (e.g. bad credentials). */
+async function isAuthWrapper401(res: Response): Promise<boolean> {
+  if (res.status !== 401) return false;
+  const body = (await res.clone().json()) as { error?: { message?: string } };
+  return body.error?.message === 'Authentication required';
+}
+
+async function expectNotBlocked(res: Response): Promise<void> {
+  expect(res.status).not.toBe(403);
+  expect(await isAuthWrapper401(res)).toBe(false);
+}
+
 describe('authz matrix', () => {
   it('registers every route handler that exists on disk', () => {
     const registered = ROUTES.map((r) => `${r.method} ${r.path}`).sort();
@@ -48,7 +60,7 @@ describe('authz matrix', () => {
       const handler = handlers[route.method];
       if (!handler) throw new Error(`no ${route.method} export for ${route.path}`);
       const res = await call(handler, { method: route.method, path: `/api/v1${route.path}`, body: route.sampleBody, params: route.sampleParams });
-      if (route.access === 'public') expect([401, 403]).not.toContain(res.status);
+      if (route.access === 'public') await expectNotBlocked(res);
       else expect(res.status).toBe(401);
     });
 
@@ -62,7 +74,7 @@ describe('authz matrix', () => {
         const handler = handlers[route.method];
         if (!handler) throw new Error(`no ${route.method} export for ${route.path}`);
         const res = await call(handler, { method: route.method, path: `/api/v1${route.path}`, body: route.sampleBody, params: route.sampleParams, cookie });
-        if (allowed) expect([401, 403]).not.toContain(res.status);
+        if (allowed) await expectNotBlocked(res);
         else expect(res.status).toBe(403);
       });
     }

@@ -1,14 +1,19 @@
 import { timingSafeEqual } from 'node:crypto';
+import { eq } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { users } from '@/db/schema';
 import { audit } from '@/lib/audit';
-import { createSession, type NewSession, type ReqCtx } from '@/lib/auth';
+import { createSession, revokeSession, type AuthUser, type NewSession, type ReqCtx } from '@/lib/auth';
 import { getEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
-import { hashPassword } from '@/lib/password';
-import type { SetupInput } from '@/schemas/auth';
+import { getDummyHash, hashPassword, verifyPassword } from '@/lib/password';
+import { permissionsFor, type Permission } from '@/lib/permissions';
+import { enforce, loginEmailLimiter, loginIpLimiter } from '@/lib/ratelimit';
+import type { LoginInput, SetupInput } from '@/schemas/auth';
+import { toPublicSettings, type PublicSettings } from '@/serializers/settings';
 import { toPublicUser, type PublicUser } from '@/serializers/user';
-import { ensureSettings } from './settings';
+import { clearFailures, getLockRemaining, recordFailure } from './lockout';
+import { ensureSettings, getSettings } from './settings';
 
 function tokenMatches(given: string, expected: string | undefined): boolean {
   if (!expected) return false;
@@ -43,4 +48,63 @@ export async function setup(db: Db, input: SetupInput, ctx: ReqCtx): Promise<{ u
 
   const session = await createSession(db, { userId: created.id, ip: ctx.ip, userAgent: ctx.userAgent, remember: true });
   return { user: created, session };
+}
+
+const INVALID_CREDENTIALS = 'Invalid email or password';
+
+/**
+ * Login with rate limits, lockout, constant-time verification (dummy hash for unknown
+ * emails) and session rotation when the caller already holds a session.
+ */
+export async function login(
+  db: Db,
+  input: LoginInput,
+  ctx: ReqCtx,
+  currentSessionId?: string,
+): Promise<{ user: PublicUser; session: NewSession }> {
+  await enforce(loginIpLimiter, ctx.ip ?? 'unknown');
+  await enforce(loginEmailLimiter, input.email);
+
+  const lockRemaining = await getLockRemaining(db, input.email);
+  if (lockRemaining > 0) {
+    throw new AppError('LOCKED', 'Account temporarily locked', { retryAfter: lockRemaining });
+  }
+
+  const [user] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
+  const ok = await verifyPassword(user?.passwordHash ?? (await getDummyHash()), input.password);
+  if (!user || !ok) {
+    await recordFailure(db, input.email, ctx.ip);
+    throw new AppError('UNAUTHENTICATED', INVALID_CREDENTIALS);
+  }
+  if (user.status !== 'ACTIVE') throw new AppError('FORBIDDEN', 'Account disabled');
+
+  await clearFailures(db, input.email);
+  await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
+  if (currentSessionId) await revokeSession(db, currentSessionId);
+  const session = await createSession(db, { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent, remember: input.remember });
+  await audit(db, { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent }, 'auth.login', 'user', user.id, null, {
+    remember: input.remember,
+  });
+  return { user: toPublicUser({ ...user, lastLoginAt: new Date() }), session };
+}
+
+export async function logout(db: Db, user: AuthUser, ctx: ReqCtx): Promise<void> {
+  await revokeSession(db, user.sessionId);
+  await audit(db, { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent }, 'auth.logout', 'user', user.id, null, null);
+}
+
+export interface MeResponse {
+  user: PublicUser;
+  permissions: Permission[];
+  settingsPublic: PublicSettings;
+}
+
+export async function me(db: Db, user: AuthUser): Promise<MeResponse> {
+  const [row] = await db.select().from(users).where(eq(users.id, user.id)).limit(1);
+  if (!row) throw new AppError('UNAUTHENTICATED', 'Authentication required');
+  return {
+    user: toPublicUser(row),
+    permissions: permissionsFor(row.role),
+    settingsPublic: toPublicSettings(await getSettings(db)),
+  };
 }

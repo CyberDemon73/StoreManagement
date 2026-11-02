@@ -19,3 +19,12 @@ export const setupBody = z
   })
   .strict();
 export type SetupInput = z.infer<typeof setupBody>;
+
+export const loginBody = z
+  .object({
+    email: emailSchema,
+    password: z.string().min(1).max(128),
+    remember: z.boolean().optional().default(false),
+  })
+  .strict();
+export type LoginInput = z.infer<typeof loginBody>;
