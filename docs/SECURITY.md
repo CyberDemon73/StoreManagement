@@ -53,3 +53,11 @@ Cross-Origin-Opener-Policy: same-origin
 
 ## Checklist for `/security-review`
 See `.claude/skills/security-review/SKILL.md` — it enumerates the above as pass/fail checks with commands.
+
+## Threat-model notes — Sprint 0 (2026-11-02)
+- **In-memory rate limiter fallback.** When Upstash env vars are unset the limiter is per-process. On Vercel that means per-instance, so production **must** set `UPSTASH_REDIS_REST_URL/TOKEN`; the login lockout is DB-backed and does not depend on this.
+- **Lockout is per email, not per IP.** An attacker can lock a known account out for 15 minutes by sending 10 bad passwords (per-IP 5/min limit slows this). Accepted for now; mitigation candidate: CAPTCHA or per-IP+email lockout (Sprint 6).
+- **Setup token.** `POST /setup` is public but refuses unless `users` is empty **and** `setupToken` matches `SETUP_TOKEN` (constant-time compare). Rotate `SETUP_TOKEN` after first run.
+- **CSP nonce + inline theme script.** Middleware issues a per-request nonce (`x-nonce`); the root layout applies it to its one inline script. Dev builds add `'unsafe-eval'` for HMR only.
+- **Health endpoint** is public and reveals only `{ ok, db }`.
+- **Session cookie on localhost.** `__Host-` requires `Secure`; Chrome/Firefox accept Secure cookies on `http://localhost`, Safari does not — use Chrome locally or an https tunnel.
