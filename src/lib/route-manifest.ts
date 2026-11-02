@@ -58,4 +58,5 @@ export const ROUTES: RouteSpec[] = [
     load: () => import('@/app/api/v1/auth/reset/route'),
     sampleBody: { token: 'x'.repeat(43), password: 'Zq9!vt-plume-orbit' },
   },
+  { method: 'GET', path: '/audit', access: 'audit.read', load: () => import('@/app/api/v1/audit/route') },
 ];
