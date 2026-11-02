@@ -10,19 +10,19 @@ Each sprint: ~1 Claude Code session of focused work. Run `/sprint N` (skill incl
 ## Sprint 0 — Foundation & security baseline
 **Goal:** empty but secure app deployed on Vercel with a database, auth and roles.
 
-- [ ] `create-next-app` (TS, App Router, Tailwind, ESLint), `src/` layout, strict TS, path aliases.
-- [ ] Drizzle + Neon: `drizzle.config.ts`, `src/db/schema/*.ts`, `src/db/client.ts` (HTTP driver for serverless), migration scripts `db:generate / db:migrate / db:seed`.
-- [ ] Schema v1: `users`, `sessions`, `password_reset_tokens`, `settings`, `audit_log`.
-- [ ] Auth: Argon2id hashing; `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/forgot`, `POST /auth/reset`, `POST /setup` (only when `users` is empty).
-- [ ] Session cookie: httpOnly, Secure, SameSite=Lax, `__Host-` prefix, 12 h idle / 30 d absolute, rotate on login, DB-backed, revoke all.
-- [ ] `withAuth(handler, { roles, permission })` wrapper + `requirePermission()` helper; permission map from `docs/ACCESS-MATRIX.md`.
-- [ ] Zod validation helper `parse(schema, req)` with `strict()` schemas; uniform error envelope `{ error: { code, message, fields } }`.
-- [ ] Rate limiting (Upstash): login 5/min/IP, 10/h/email; general 120/min/user; lockout after 10 failures for 15 min (`failed_logins` table or Redis).
-- [ ] CSRF: Origin/Referer check for non-GET in middleware.
-- [ ] Security headers in `next.config.ts` / middleware: CSP (self + blob + fonts), HSTS, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, X-Content-Type-Options.
-- [ ] Audit log writer `audit(user, action, entity, before, after)`.
-- [ ] `.env.example`, README deploy steps, Vercel project + Neon + Upstash connected, first deploy green.
-- [ ] Tests: auth happy path, lockout, role guard (Vitest + supertest-style fetch against route handlers).
+- [x] `create-next-app` (TS, App Router, Tailwind, ESLint), `src/` layout, strict TS, path aliases.
+- [x] Drizzle + Neon: `drizzle.config.ts`, `src/db/schema/*.ts`, `src/db/client.ts` (HTTP driver for serverless), migration scripts `db:generate / db:migrate / db:seed`.
+- [x] Schema v1: `users`, `sessions`, `password_reset_tokens`, `settings`, `audit_log`.
+- [x] Auth: Argon2id hashing; `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/forgot`, `POST /auth/reset`, `POST /setup` (only when `users` is empty).
+- [x] Session cookie: httpOnly, Secure, SameSite=Lax, `__Host-` prefix, 12 h idle / 30 d absolute, rotate on login, DB-backed, revoke all.
+- [x] `withAuth(handler, { roles, permission })` wrapper + `requirePermission()` helper; permission map from `docs/ACCESS-MATRIX.md`.
+- [x] Zod validation helper `parse(schema, req)` with `strict()` schemas; uniform error envelope `{ error: { code, message, fields } }`.
+- [x] Rate limiting (Upstash): login 5/min/IP, 10/h/email; general 120/min/user; lockout after 10 failures for 15 min (`failed_logins` table or Redis).
+- [x] CSRF: Origin/Referer check for non-GET in middleware.
+- [x] Security headers in `next.config.ts` / middleware: CSP (self + blob + fonts), HSTS, X-Frame-Options DENY, Referrer-Policy, Permissions-Policy, X-Content-Type-Options.
+- [x] Audit log writer `audit(user, action, entity, before, after)`.
+- [ ] `.env.example`, README deploy steps, Vercel project + Neon + Upstash connected, first deploy green. _(.env.example + README done; Vercel/Neon/Upstash accounts + first deploy need the owner — see README "Deploy to Vercel")_
+- [x] Tests: auth happy path, lockout, role guard (Vitest + supertest-style fetch against route handlers).
 
 **Done when:** you can run setup, log in as admin, hit `/auth/me`, get 403 as seller on a manager route, and see headers in `curl -I`.
 

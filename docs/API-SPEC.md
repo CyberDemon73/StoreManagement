@@ -1,18 +1,18 @@
 # API specification — `/api/v1`
 
 Conventions
-- JSON only. Auth via session cookie (`__Host-as_session`). All non-GET requests must pass the Origin check.
+- JSON only. Auth via session cookie (`__Host-as_session`). All non-GET requests must pass the Origin check **and** send `X-Requested-With: AvenueStock` (403 otherwise). Every response carries `X-Request-Id`.
 - Pagination: `?page=1&pageSize=25` (max 100) → `{ data, page, pageSize, total }`.
 - Dates ISO-8601 UTC. Money integer minor units.
-- Errors: `{ error: { code: 'VALIDATION'|'UNAUTHENTICATED'|'FORBIDDEN'|'NOT_FOUND'|'CONFLICT'|'RATE_LIMITED'|'LOCKED'|'INSUFFICIENT_STOCK'|'INTERNAL', message, fields?: Record<string,string> } }` with 400/401/403/404/409/429/423/409/500.
+- Errors: `{ error: { code: 'VALIDATION'|'UNAUTHENTICATED'|'FORBIDDEN'|'NOT_FOUND'|'CONFLICT'|'RATE_LIMITED'|'LOCKED'|'INSUFFICIENT_STOCK'|'INTERNAL', message, fields?: Record<string,string>, retryAfter?: number } }` with 400/401/403/404/409/429/423/409/500. `retryAfter` (seconds) accompanies 423/429 together with a `Retry-After` header. Unknown body keys appear in `fields` as `'Unknown field'`. Bodies over 1 MB → 413 `VALIDATION`.
 - Permission column uses keys from `ACCESS-MATRIX.md`. `SELLER` responses pass through `serializers/seller.ts` which removes `costPrice`, `defaultCost`, `unitCost`, `margin*`, `profit*`.
 - Idempotency: `POST /sales` and `POST /stock/purchases` accept `Idempotency-Key` header (uuid); replay returns the original response.
 
 ## Auth & setup
 | Method | Path | Perm | Body / Query | Response |
 |---|---|---|---|---|
-| POST | /setup | public (only if 0 users) | `{ name, email, password, storeName, currency }` | `{ user }` + session |
-| POST | /auth/login | public (rate limited) | `{ email, password, remember? }` | `{ user }` + cookie |
+| POST | /setup | public (only if 0 users) | `{ name, email, password, storeName, currency, setupToken }` — `setupToken` must equal env `SETUP_TOKEN` (403 otherwise; 409 once a user exists) | 201 `{ user }` + session cookie |
+| POST | /auth/login | public (rate limited) | `{ email, password, remember? }` | `{ user }` + cookie; 401 bad credentials, 423 locked (`retryAfter`), 429 rate limited |
 | POST | /auth/logout | auth | — | 204 |
 | GET | /auth/me | auth | — | `{ user, permissions: string[], settingsPublic }` |
 | POST | /auth/forgot | public (rate limited) | `{ email }` | 204 always |
@@ -94,7 +94,7 @@ Conventions
 | POST | /users/:id/revoke-sessions | users.manage | |
 | GET | /settings | auth (public subset) / settings.write (full) | |
 | PATCH | /settings | settings.write | partial, validated |
-| GET | /audit | audit.read | `q, userId, entity, action, from, to, page` |
+| GET | /audit | audit.read | `page, pageSize` today (Sprint 0); `q, userId, entity, action, from, to` arrive in Sprint 5 |
 | GET | /notifications | auth | unread first |
 | POST | /notifications/:id/read | auth | and `/notifications/read-all` |
 | GET | /data/export | export.csv (ADMIN) | zip of CSVs |
