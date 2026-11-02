@@ -20,3 +20,4 @@ Format: `YYYY-MM-DD — decision — why — alternatives considered`
 - 2026-11-02 — `GET /health` (Sprint 6) and a minimal `GET /audit` (Sprint 5) implemented in Sprint 0 — kickoff asked for health; audit is the manager-only route the Sprint 0 "done when" needs for the seller-403 check — stub route (rejected: not real)
 - 2026-11-02 — Route manifest `src/lib/route-manifest.ts` + authz matrix test; a `route.ts` missing from the manifest fails the suite — makes forgetting the matrix impossible — manual list (rejected)
 - 2026-11-02 — Unknown body keys reported per key as `fields.<key> = "Unknown field"` — friendlier than Zod 4 root issue — root `_` key (rejected)
+- 2026-11-02 — pnpm overrides `postcss >=8.5.18` and `tinypool >=2.1.2` — clear 2 high (postcss, pinned by next 15.5) and 2 critical (tinypool, dev-only via vitest 3) advisories; suite and build verified green — ignoring via auditConfig (rejected: hides real exposure)
