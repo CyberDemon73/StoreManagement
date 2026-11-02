@@ -17,8 +17,8 @@ sessions
 password_reset_tokens
   id, user_id fk, token_hash text unique, purpose enum(RESET,INVITE), expires_at, used_at
   
-failed_logins   -- or Redis
-  email citext, ip inet, count int, locked_until timestamptz, updated_at
+failed_logins   -- DB table (chosen over Redis so lockout works in tests and is auditable)
+  email citext pk, ip inet, count int default 0, locked_until timestamptz null, updated_at
 ```
 
 ## catalog
@@ -93,7 +93,7 @@ parked_sales
 
 ## system
 ```
-settings  (single row, id = 1)
+settings  (single row: id integer pk default 1, check(id = 1))
   store_name, logo_url, phone, address, currency char(3) default 'EGP', timezone text default 'Africa/Cairo',
   low_stock_default int default 3, sale_number_prefix text default 'AS',
   seller_discount_cap_pct numeric(5,2) default 10, allow_negative_stock bool default false,
