@@ -1,0 +1,51 @@
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { AppError } from '@/lib/errors';
+import { createLimiter, enforce, resetMemoryLimiters } from '@/lib/ratelimit';
+
+afterEach(() => {
+  vi.useRealTimers();
+  resetMemoryLimiters();
+});
+
+describe('in-memory rate limiter', () => {
+  it('allows `tokens` calls per window, then refuses', async () => {
+    const limiter = createLimiter('t', 2, 1000);
+    expect((await limiter.limit('k')).success).toBe(true);
+    expect((await limiter.limit('k')).success).toBe(true);
+    const third = await limiter.limit('k');
+    expect(third.success).toBe(false);
+    expect(third.remaining).toBe(0);
+  });
+
+  it('isolates keys', async () => {
+    const limiter = createLimiter('t', 1, 1000);
+    expect((await limiter.limit('a')).success).toBe(true);
+    expect((await limiter.limit('b')).success).toBe(true);
+    expect((await limiter.limit('a')).success).toBe(false);
+  });
+
+  it('allows again once the window has passed', async () => {
+    vi.useFakeTimers();
+    const limiter = createLimiter('t', 1, 1000);
+    expect((await limiter.limit('k')).success).toBe(true);
+    expect((await limiter.limit('k')).success).toBe(false);
+    vi.advanceTimersByTime(1001);
+    expect((await limiter.limit('k')).success).toBe(true);
+  });
+
+  it('enforce() throws RATE_LIMITED with retryAfter', async () => {
+    const limiter = createLimiter('t', 1, 60_000);
+    await enforce(limiter, 'k');
+    try {
+      await enforce(limiter, 'k');
+      throw new Error('should have thrown');
+    } catch (e) {
+      expect(e).toBeInstanceOf(AppError);
+      const err = e as AppError;
+      expect(err.code).toBe('RATE_LIMITED');
+      expect(err.status).toBe(429);
+      expect(err.retryAfter).toBeGreaterThanOrEqual(1);
+      expect(err.retryAfter).toBeLessThanOrEqual(60);
+    }
+  });
+});
