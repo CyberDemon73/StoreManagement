@@ -35,7 +35,11 @@ export interface HandlerCtx {
   db: Db;
 }
 
-export type RouteHandler = (req: Request, ctx?: { params: Promise<Record<string, string>> }) => Promise<Response>;
+export interface RouteContext {
+  params: Promise<Record<string, string>>;
+}
+
+export type RouteHandler = (req: Request, ctx: RouteContext) => Promise<Response>;
 
 export type AuthOptions = { permission: Permission } | { auth: true } | { public: true };
 
@@ -165,7 +169,7 @@ export function withAuth(opts: AuthOptions, handler: (req: Request, ctx: Handler
         if ('permission' in opts) requirePermission(user, opts.permission);
         await enforce(apiUserLimiter, user.id);
       }
-      const params = routeCtx ? await routeCtx.params : {};
+      const params = await routeCtx.params;
       const res = await handler(req, {
         user,
         params,
