@@ -245,7 +245,8 @@ export const api = {
     /** POST /sales/:id/void */
     void: (id: string, reason: string) => call<Sale>(() => store.voidSale(id, reason, ctx.userId), 'POST', `/sales/${id}/void`, { reason }),
     /** POST /sales/:id/returns */
-    createReturn: (id: string, input: store.ReturnInput) => call<Sale>(() => store.createReturn(id, input, ctx.userId), 'POST', `/sales/${id}/returns`, { items: input.items.filter((i) => i.qty > 0), refundMethod: input.refundMethod, reason: input.reason, note: input.note || undefined }),
+    /** POST /sales/:id/returns — refund amounts come back from the server (`returns[].refundAmount`); never recompute them client-side. */
+    createReturn: (id: string, input: store.ReturnInput, idempotencyKey?: string) => call<Sale>(() => store.createReturn(id, input, ctx.userId), 'POST', `/sales/${id}/returns`, { items: input.items.filter((i) => i.qty > 0), refundMethod: input.refundMethod, reason: input.reason, note: input.note || undefined }, undefined, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined),
     /** GET /sales/parked */
     parked: () => call<ParkedSale[]>(() => store.listParked(), 'GET', '/sales/parked'),
     /** POST /sales/parked */

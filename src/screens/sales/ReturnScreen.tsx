@@ -4,7 +4,7 @@
  * Calls: GET /sales/:id · POST /sales/:id/returns
  * Each line: qty to return (max sold − already returned) + restock toggle. Refund = unitPrice × qty × (1 − discount%).
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useApi, useBreakpoint, useMutation } from '@/lib/use-api';
@@ -52,7 +52,9 @@ export function ReturnScreen({ saleId }: { saleId: string }) {
   const alreadyRefunded = s?.items.filter((it) => it.returnedQty > 0).length ?? 0;
   const closed = !!s && (s.status === 'VOID' || s.status === 'REFUNDED');
 
-  const create = useMutation(() => api.sales.createReturn(saleId, { items: picked.map((x) => ({ saleItemId: x.it.id, qty: x.st.qty, restock: x.st.restock })), refundMethod: method ?? s?.paymentMethod ?? 'CASH', reason, note: note.trim() || undefined }));
+  // One Idempotency-Key per return attempt, reused on retry (same contract as checkout).
+  const idemKey = useRef<string | undefined>(undefined);
+  const create = useMutation(() => api.sales.createReturn(saleId, { items: picked.map((x) => ({ saleItemId: x.it.id, qty: x.st.qty, restock: x.st.restock })), refundMethod: method ?? s?.paymentMethod ?? 'CASH', reason, note: note.trim() || undefined }, (idemKey.current ??= crypto.randomUUID())));
   const confirm = async () => {
     try { await create.mutate(); toast({ kind: 'success', title: `Refund of ${formatMoney(total, 'EGP', { withCurrency: true })} recorded`, body: `${count} item${count === 1 ? '' : 's'} returned · ${restocked} back to stock` }); router.push(`/sales?open=${saleId}`); }
     catch (e) { toast({ kind: 'error', title: "Couldn't record the return", body: (e as Error).message }); }
