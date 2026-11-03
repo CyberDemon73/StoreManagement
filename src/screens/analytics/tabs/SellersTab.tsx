@@ -19,7 +19,10 @@ export function SellersTab({ range }: TabProps) {
   const s = sellers.data;
   const revenue = s?.reduce((a, x) => a + x.revenue, 0) ?? 0;
   const sales = s?.reduce((a, x) => a + x.salesCount, 0) ?? 0;
-  const top = s && s.length ? s.reduce((a, x) => (x.revenue > a.revenue ? x : a)) : undefined;
+  // Analytics may include a synthetic 'Unassigned' row (empty userId, negative revenue) or
+  // sellers with 0 sales; pick the top from rows that actually sold.
+  const active = s?.filter((x) => x.salesCount > 0 && x.userId) ?? [];
+  const top = active.length ? active.reduce((a, x) => (x.revenue > a.revenue ? x : a)) : undefined;
   const flagged = s?.filter((x) => x.returnRatePct > RETURN_WARN_PCT).length ?? 0;
 
   const columns: Column<SellerStats>[] = [
@@ -40,7 +43,7 @@ export function SellersTab({ range }: TabProps) {
         <KpiCard label="Avg basket" value={formatMoney(sales ? Math.round(revenue / sales) : 0, 'EGP', { compact: true })} sub="across all sellers" />
         <KpiCard label="High return rate" value={String(flagged)} unit={flagged === 1 ? 'seller' : 'sellers'} sub={`above ${RETURN_WARN_PCT}%`} />
       </KpiGrid>
-      <DataTable aria-label="Sellers" columns={columns} rows={s} rowKey={(r) => r.userId} loading={sellers.loading} error={sellers.error} onRetry={() => void sellers.refetch()}
+      <DataTable aria-label="Sellers" columns={columns} rows={s} rowKey={(r) => r.userId || r.name} loading={sellers.loading} error={sellers.error} onRetry={() => void sellers.refetch()}
         rowClassName={(r) => (r.returnRatePct > RETURN_WARN_PCT ? 'bg-warn-soft/30' : undefined)}
         empty={<EmptyState compact title="No sales in this range" body="Pick a wider date range." />}
         footer={<span className="text-ink-2">Return rate above {RETURN_WARN_PCT}% is highlighted.</span>} />
