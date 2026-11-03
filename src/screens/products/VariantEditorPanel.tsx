@@ -9,6 +9,7 @@ import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { formatMoney, formatPct, marginPct, REASON_LABEL, stockStatus } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
+import { BarcodeCaptureButton } from '@/components/app/BarcodeScanner';
 import { Field, Input, MoneyInput, Select } from '@/components/ui/Field';
 import { QuantityInput } from '@/components/ui/Controls';
 import { ColorSwatch, StockBadge } from '@/components/ui/Badge';
@@ -93,7 +94,7 @@ export function VariantEditorPanel({ variant, open, onClose, onSaved }: { varian
             {showCost && <Field label="Cost price" htmlFor="v-cost" error={errors.costPrice}><MoneyInput id="v-cost" value={cost} onChange={setCost} /></Field>}
             <Field label="Sell price" htmlFor="v-price" error={errors.price ?? errors.sellPrice} help={margin !== undefined ? `Margin ${formatPct(margin)}` : undefined}><MoneyInput id="v-price" value={price} onChange={setPrice} invalid={!!errors.price} /></Field>
             <Field label="SKU" htmlFor="v-sku" error={errors.sku}><Input id="v-sku" value={sku} onChange={(e) => setSku(e.target.value)} invalid={!!errors.sku} className="tabular" /></Field>
-            <Field label="Barcode" htmlFor="v-bar" error={errors.barcode}><Input id="v-bar" inputMode="numeric" value={barcode} onChange={(e) => setBarcode(e.target.value)} className="tabular" /></Field>
+            <Field label="Barcode" htmlFor="v-bar" error={errors.barcode}><div className="flex gap-2"><Input id="v-bar" inputMode="numeric" value={barcode} onChange={(e) => setBarcode(e.target.value)} className="tabular" placeholder="Type or scan" /><BarcodeCaptureButton onCode={setBarcode} label="Scan" variant="secondary" aria-label="Scan barcode with the camera" /></div></Field>
             <Field label="Low-stock threshold" htmlFor="v-thr" error={errors.threshold ?? errors.lowStockThreshold}><Input id="v-thr" type="number" min={0} inputMode="numeric" value={threshold} onChange={(e) => setThreshold(Math.max(0, parseInt(e.target.value || '0', 10)))} align="right" /></Field>
           </div>
         ) : (

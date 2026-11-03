@@ -37,7 +37,21 @@ export function BarcodeScannerButton({ onScan, label = 'Scan', ...btn }: { onSca
   );
 }
 
-function ScannerSheet({ onClose, onScan }: { onClose: () => void; onScan: (v: VariantWithProduct) => void }) {
+/**
+ * Opens the camera to READ a code into a form (e.g. a variant's barcode field) instead of looking
+ * a product up. A code that already belongs to another variant is refused with the miss tone.
+ */
+export function BarcodeCaptureButton({ onCode, label = 'Scan', ...btn }: { onCode: (code: string) => void; label?: string } & Omit<ButtonProps, 'onClick' | 'children'>) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Button type="button" leading={<ScanLine />} onClick={() => { unlockScanSound(); setOpen(true); }} {...btn}>{label}</Button>
+      {open && <ScannerSheet onClose={() => setOpen(false)} onScan={() => undefined} capture={(c) => { onCode(c); setOpen(false); }} />}
+    </>
+  );
+}
+
+function ScannerSheet({ onClose, onScan, capture }: { onClose: () => void; onScan: (v: VariantWithProduct) => void; capture?: (code: string) => void }) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stopRef = useRef<() => void>(() => undefined);
@@ -47,6 +61,8 @@ function ScannerSheet({ onClose, onScan }: { onClose: () => void; onScan: (v: Va
   // from tearing down and restarting the stream (which stopped decoding from ever settling).
   const onScanRef = useRef(onScan);
   onScanRef.current = onScan;
+  const captureRef = useRef(capture);
+  captureRef.current = capture;
   const [camera, setCamera] = useState<CameraState>('idle');
   const [engine, setEngine] = useState<'native' | 'zxing' | null>(null);
   const [code, setCode] = useState('');
@@ -60,6 +76,21 @@ function ScannerSheet({ onClose, onScan }: { onClose: () => void; onScan: (v: Va
     setBusy(true);
     setStatus(null);
     try {
+      if (captureRef.current) {
+        // Capture mode: the code must be free. A hit means it already labels another variant.
+        try {
+          const taken = await api.variants.lookup({ barcode: c });
+          playScanSound('miss');
+          setStatus({ kind: 'error', text: `${c} is already used by ${taken.product.name} ${taken.size} · ${taken.color.name}.` });
+          return false;
+        } catch (e) {
+          if (!(e instanceof ApiError && e.code === 'NOT_FOUND')) throw e;
+        }
+        playScanSound('ok');
+        if (navigator.vibrate) navigator.vibrate(40);
+        captureRef.current(c);
+        return true;
+      }
       const v = await api.variants.lookup(/^\d+$/.test(c) ? { barcode: c } : { sku: c });
       playScanSound('ok');
       if (navigator.vibrate) navigator.vibrate(40);
