@@ -25,7 +25,7 @@ export const POST = withAuth({ permission: 'stock.receive' }, async (req, { db, 
   if (key !== null && !UUID_RE.test(key)) throw new AppError('VALIDATION', 'Idempotency-Key must be a UUID');
   const body = await parse(purchaseBody, req);
   const requestHash = createHash('sha256').update(JSON.stringify(body)).digest('hex');
-  const r = await withIdempotency(db, actor.id, key, requestHash, async () => ({
+  const r = await withIdempotency(db, actor.id, 'POST /stock/purchases', key, requestHash, async () => ({
     status: 201,
     body: await createPurchase(db, actor, body, ctx),
   }));

@@ -1,9 +1,10 @@
-import { and, eq, gt } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { idempotencyKeys } from '@/db/schema';
 import { AppError } from './errors';
 
 export const IDEMPOTENCY_TTL_MS = 24 * 3_600_000;
+const IN_PROGRESS = 0;
 
 export interface IdempotentResult<T> {
   status: number;
@@ -12,13 +13,15 @@ export interface IdempotentResult<T> {
 }
 
 /**
- * Replay protection for POST routes: the first call with a key runs `fn` and stores its
- * response for 24 h; later calls with the same key and request hash get the stored response.
- * The same key with a different request is a client bug and is refused.
+ * Replay protection for POST routes, scoped per user and route.
+ * Claim-first: the key row is inserted (status 0) BEFORE `fn` runs, so concurrent requests
+ * with the same key cannot all execute — the losers see the claim and get 409 (in progress)
+ * or the stored response once the winner finished. If `fn` throws, the claim is released.
  */
 export async function withIdempotency<T>(
   db: Db,
   userId: string,
+  route: string,
   key: string | null,
   requestHash: string,
   fn: () => Promise<{ status: number; body: T }>,
@@ -28,26 +31,40 @@ export async function withIdempotency<T>(
     return { ...r, replayed: false };
   }
 
+  const scope = and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.route, route), eq(idempotencyKeys.key, key));
   const since = new Date(Date.now() - IDEMPOTENCY_TTL_MS);
-  const [hit] = await db
-    .select()
-    .from(idempotencyKeys)
-    .where(and(eq(idempotencyKeys.userId, userId), eq(idempotencyKeys.key, key), gt(idempotencyKeys.createdAt, since)))
-    .limit(1);
-  if (hit) {
-    if (hit.requestHash !== requestHash) {
+
+  // Expired rows are dead weight: clear one if present so the claim below can succeed.
+  await db.delete(idempotencyKeys).where(and(scope, lt(idempotencyKeys.createdAt, since)));
+
+  const claimed = await db
+    .insert(idempotencyKeys)
+    .values({ userId, route, key, requestHash, status: IN_PROGRESS, response: {} })
+    .onConflictDoNothing()
+    .returning({ key: idempotencyKeys.key });
+
+  if (claimed.length === 0) {
+    const [existing] = await db.select().from(idempotencyKeys).where(scope).limit(1);
+    if (!existing) throw new AppError('CONFLICT', 'Idempotency-Key is being processed, retry shortly');
+    if (existing.requestHash !== requestHash) {
       throw new AppError('CONFLICT', 'Idempotency-Key reused with a different request');
     }
-    return { status: hit.status, body: hit.response as T, replayed: true };
+    if (existing.status === IN_PROGRESS) {
+      throw new AppError('CONFLICT', 'Idempotency-Key is being processed, retry shortly', { retryAfter: 2 });
+    }
+    return { status: existing.status, body: existing.response as T, replayed: true };
   }
 
-  const r = await fn();
+  let r: { status: number; body: T };
+  try {
+    r = await fn();
+  } catch (err) {
+    await db.delete(idempotencyKeys).where(scope);
+    throw err;
+  }
   await db
-    .insert(idempotencyKeys)
-    .values({ userId, key, requestHash, status: r.status, response: r.body as object })
-    .onConflictDoUpdate({
-      target: [idempotencyKeys.userId, idempotencyKeys.key],
-      set: { requestHash, status: r.status, response: r.body as object, createdAt: new Date() },
-    });
+    .update(idempotencyKeys)
+    .set({ status: r.status, response: r.body as object })
+    .where(scope);
   return { ...r, replayed: false };
 }

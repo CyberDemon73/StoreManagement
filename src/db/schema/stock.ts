@@ -1,5 +1,5 @@
 import { sql } from 'drizzle-orm';
-import { index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
+import { bigint, index, integer, jsonb, pgEnum, pgTable, primaryKey, text, timestamp, unique, uuid } from 'drizzle-orm/pg-core';
 import { users } from './auth';
 import { suppliers, variants } from './catalog';
 
@@ -12,6 +12,8 @@ export const stockMovements = pgTable(
   'stock_movements',
   {
     id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    /** Insertion order: rows written in one transaction share created_at, so ordering uses seq. */
+    seq: bigint('seq', { mode: 'number' }).notNull().generatedAlwaysAsIdentity(),
     variantId: uuid('variant_id')
       .notNull()
       .references(() => variants.id, { onDelete: 'restrict' }),
@@ -107,13 +109,16 @@ export const idempotencyKeys = pgTable(
     userId: uuid('user_id')
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
+    /** e.g. "POST /stock/purchases" — keys are scoped per route. */
+    route: text('route').notNull(),
     key: text('key').notNull(),
     requestHash: text('request_hash').notNull(),
+    /** 0 while the first request is still running (claim), else the stored HTTP status. */
     status: integer('status').notNull(),
     response: jsonb('response').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [primaryKey({ columns: [t.userId, t.key] }), index('idempotency_keys_created_at_idx').on(t.createdAt)],
+  (t) => [primaryKey({ columns: [t.userId, t.route, t.key] }), index('idempotency_keys_created_at_idx').on(t.createdAt)],
 );
 
 export type StockMovementRow = typeof stockMovements.$inferSelect;

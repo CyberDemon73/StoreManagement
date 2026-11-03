@@ -174,3 +174,22 @@ describe('GET /stock/purchases', () => {
     expect(badPage.status).toBe(400);
   });
 });
+
+describe('idempotency under concurrency', () => {
+  it('three simultaneous posts with the same key create exactly one purchase', async () => {
+    const db = getDb();
+    const m = await createUser(db, { role: 'MANAGER' });
+    const cookie = await sessionCookieFor(db, m.id);
+    const fx = await stockFixture(db, m.id);
+    const body = { items: [{ variantId: fx.variants[0].id, qty: 3, unitCost: 100 }] };
+    const key = '11111111-2222-4333-8444-555555555555';
+    const results = await Promise.all([1, 2, 3].map(() => post(cookie, body, { 'idempotency-key': key })));
+    const statuses = results.map((r) => r.status).sort();
+    expect(statuses.filter((s) => s === 201).length).toBeGreaterThanOrEqual(1);
+    expect(statuses.every((s) => s === 201 || s === 409)).toBe(true);
+    const purchases = await db.select().from(stockMovements).where(eq(stockMovements.type, 'PURCHASE'));
+    expect(purchases).toHaveLength(1);
+    const [row] = await db.select({ q: variants.quantity }).from(variants).where(eq(variants.id, fx.variants[0].id));
+    expect(row?.q).toBe(13);
+  });
+});

@@ -54,8 +54,8 @@ describe('stock schema (sprint 2)', () => {
     const [count] = await db.insert(stockCounts).values({ number: 'SC-000001', startedBy: u.id }).returning();
     await db.insert(stockCountItems).values({ countId: count!.id, variantId, systemQty: 0 });
     expect(await pgCode(db.insert(stockCountItems).values({ countId: count!.id, variantId, systemQty: 0 }))).toBe('23505');
-    await db.insert(idempotencyKeys).values({ userId: u.id, key: 'k1', requestHash: 'h', status: 201, response: { ok: true } });
-    expect(await pgCode(db.insert(idempotencyKeys).values({ userId: u.id, key: 'k1', requestHash: 'h2', status: 201, response: {} }))).toBe('23505');
+    await db.insert(idempotencyKeys).values({ userId: u.id, route: 'POST /x', key: 'k1', requestHash: 'h', status: 201, response: { ok: true } });
+    expect(await pgCode(db.insert(idempotencyKeys).values({ userId: u.id, route: 'POST /x', key: 'k1', requestHash: 'h2', status: 201, response: {} }))).toBe('23505');
     expect(count!.status).toBe('OPEN');
     expect(count!.scope).toBe('all');
   });
