@@ -23,6 +23,7 @@ import { Kbd } from '@/components/ui/Badge';
 import { MenuItem, Popover } from '@/components/ui/Overlay';
 import { Segmented } from '@/components/ui/Field';
 import { GlobalSearch } from './GlobalSearch';
+import { LogoMark, Wordmark } from './Brand';
 import { NotificationsPopover } from './Notifications';
 import { OfflineBanner, InstallPwaPrompt, UpdateAvailableToast, ViewingAsBanner } from './SystemBanners';
 
@@ -48,8 +49,8 @@ export function AppShell({ children }: { children: ReactNode }) {
       {/* Sidebar ≥ xl */}
       <aside className="app-sidebar sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col border-r border-line bg-surface px-3 py-4 xl:flex" aria-label="Main">
         <Link href={role === 'SELLER' ? '/home' : '/dashboard'} className="mb-4 flex items-center gap-3 rounded-lg px-2 py-1">
-          <Logo />
-          <span><span className="block text-sm font-semibold">Avenue Stock</span><span className="block text-[11px] text-ink-2">Zamalek store</span></span>
+          <LogoMark />
+          <span><Wordmark size="sm" className="block" /><span className="block text-[11px] text-ink-2">Zamalek store</span></span>
         </Link>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
           {nav.map((section, i) => (
@@ -64,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
 
       {/* Icon rail md–xl */}
       <aside className={cn('app-sidebar sticky top-0 hidden h-dvh shrink-0 flex-col items-stretch border-r border-line bg-surface py-4 transition-[width] duration-200 md:flex xl:hidden', railOpen ? 'w-56 px-2' : 'w-[72px] items-center px-3')} aria-label="Main" onMouseEnter={() => setRailOpen(true)} onMouseLeave={() => setRailOpen(false)}>
-        <Link href={role === 'SELLER' ? '/home' : '/dashboard'} className={cn('mb-3 flex items-center gap-3 rounded-lg', railOpen ? 'px-2' : 'justify-center')}><Logo />{railOpen && <span className="text-sm font-semibold">Avenue Stock</span>}</Link>
+        <Link href={role === 'SELLER' ? '/home' : '/dashboard'} className={cn('mb-3 flex items-center gap-3 rounded-lg', railOpen ? 'px-2' : 'justify-center')}><LogoMark />{railOpen && <Wordmark size="sm" />}</Link>
         <nav className="flex flex-1 flex-col gap-1 overflow-y-auto">
           {nav.flatMap((s) => s.items).filter((it) => !it.permission || auth.can(it.permission)).map((it) => (
             <Link key={it.href} href={it.href} aria-label={it.label} aria-current={isActivePath(pathname, it.href) ? 'page' : undefined} title={it.label}
@@ -93,9 +94,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   );
 }
 
-export function Logo({ size = 'md' }: { size?: 'md' | 'lg' }) {
-  return <span aria-hidden className={cn('inline-flex shrink-0 items-center justify-center rounded-[9px] bg-accent font-bold tracking-[-0.04em] text-accent-ink', size === 'lg' ? 'size-14 rounded-2xl text-[26px]' : 'size-8 text-[15px]')}>A</span>;
-}
+export { LogoMark as Logo } from './Brand';
 
 function SideLink({ item, active, count }: { item: NavItem; active: boolean; count?: number }) {
   return (
@@ -118,7 +117,7 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
 
   return (
     <header className="app-topbar no-print sticky top-0 z-40 flex min-h-14 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur safe-top md:px-5">
-      <div className="flex items-center gap-2 md:hidden"><Logo /></div>
+      <div className="flex items-center gap-2 md:hidden"><LogoMark size="sm" title="Avenue Stock" /></div>
       <div id="page-title-slot" className="min-w-0 flex-1" />
       <button type="button" onClick={onSearch} className="hidden min-h-9 w-64 items-center gap-2 rounded-input border border-line bg-surface px-3 text-sm text-ink-3 hover:bg-surface-2 lg:flex xl:w-80" aria-label="Search (Command K)"><Search className="size-4" aria-hidden /><span className="flex-1 text-left">Search products, SKUs, sales…</span><Kbd>⌘K</Kbd></button>
       <Button variant="ghost" iconOnly aria-label="Search" onClick={onSearch} className="lg:hidden"><Search /></Button>

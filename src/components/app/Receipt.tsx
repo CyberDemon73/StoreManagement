@@ -1,6 +1,7 @@
 'use client';
 import { formatMoney, formatDate, formatTime, PAYMENT_LABEL } from '@/lib/format';
 import { cn } from '@/lib/cn';
+import { LogoMark } from './Brand';
 import type { Sale, Settings } from '@/types';
 
 /** Print-friendly receipt (80 mm roll). Wrap in `.print-area` to be the only thing printed. */
@@ -8,7 +9,7 @@ export function Receipt({ sale, settings, className }: { sale: Sale; settings?: 
   const s = settings ?? { storeName: 'Avenue', receiptHeader: '26 Brazil St, Zamalek · 02 2735 1180', receiptFooter: 'Exchanges within 14 days with receipt. Thank you.', receiptShowLogo: true, currency: 'EGP' };
   return (
     <div className={cn('print-area mx-auto w-full max-w-[320px] rounded-card border border-line bg-white p-4 font-mono text-[12px] leading-relaxed text-[#1F2421] print:max-w-none print:border-0 print:p-0', className)}>
-      {s.receiptShowLogo && <p className="text-center text-[14px] font-bold tracking-wide">{s.storeName.toUpperCase()} STOCK</p>}
+      {s.receiptShowLogo && <div className="mb-1 flex flex-col items-center gap-1"><LogoMark size={28} variant="mono" className="text-[#1F2421]" /><p className="text-center text-[14px] font-bold tracking-wide">{s.storeName.toUpperCase()} STOCK</p></div>}
       {s.receiptHeader && <p className="text-center">{s.receiptHeader}</p>}
       <p className="text-center">{sale.number} · {formatDate(sale.createdAt, 'DD/MM/YYYY')} {formatTime(sale.createdAt)}</p>
       <hr className="my-2 border-dashed border-[#9AA09B]" />
@@ -30,10 +31,10 @@ export function Receipt({ sale, settings, className }: { sale: Sale; settings?: 
 }
 
 /** Barcode label card for the Labels screen. */
-export function LabelCard({ name, variant, sku, barcode, price, showPrice = true, showVariant = true, thermal }: { name: string; variant: string; sku: string; barcode?: string; price: number; showPrice?: boolean; showVariant?: boolean; thermal?: boolean }) {
+export function LabelCard({ name, variant, sku, barcode, price, showPrice = true, showVariant = true, thermal, showLogo }: { name: string; variant: string; sku: string; barcode?: string; price: number; showPrice?: boolean; showVariant?: boolean; thermal?: boolean; showLogo?: boolean }) {
   return (
     <div className={cn('flex flex-col gap-0.5 rounded border border-dashed border-line bg-white p-2 text-[9px] leading-tight text-[#1F2421] print:border-0', thermal ? 'h-[30mm] w-[40mm]' : 'min-h-[80px]')}>
-      <p className="truncate text-[10px] font-semibold">{name}</p>
+      <p className="flex items-center gap-1 truncate text-[10px] font-semibold">{showLogo && <LogoMark size={10} variant="mono" className="text-[#3F6B5C]" />}<span className="truncate">{name}</span></p>
       {showVariant && <p className="truncate text-[#5B625D]">{variant} · {sku}</p>}
       <div aria-hidden className="my-1 h-6" style={{ background: 'repeating-linear-gradient(90deg,#1F2421 0 1px,transparent 1px 3px,#1F2421 3px 5px,transparent 5px 7px,#1F2421 7px 8px,transparent 8px 11px)' }} />
       <div className="flex items-end justify-between"><span className="tabular text-[#5B625D]">{barcode ?? sku}</span>{showPrice && <span className="tabular text-[11px] font-bold">{formatMoney(price, 'EGP', { withCurrency: true, compact: true })}</span>}</div>

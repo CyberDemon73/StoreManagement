@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { Download, Eye, RefreshCw, Share, WifiOff, X } from 'lucide-react';
 import { useOnline, useLocalStorage } from '@/lib/use-api';
 import { Button } from '@/components/ui/Button';
-import { Logo } from './AppShell';
+import { LogoMark } from './Brand';
 
 export function OfflineBanner() {
   const online = useOnline();
@@ -47,7 +47,7 @@ export function InstallPwaPrompt() {
   return (
     <div role="dialog" aria-label="Install Avenue" className="no-print fixed inset-x-4 bottom-24 z-50 mx-auto max-w-sm rounded-card border border-line bg-surface p-4 shadow-float md:bottom-6 md:right-6 md:left-auto">
       <div className="flex items-start gap-3">
-        <Logo />
+        <LogoMark size="lg" />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">Install Avenue</p>
           {evt ? <p className="text-xs text-ink-2">Opens full-screen, works offline, one tap from your home screen.</p>

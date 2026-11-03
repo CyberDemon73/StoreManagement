@@ -12,7 +12,8 @@ export const metadata: Metadata = {
   applicationName: 'Avenue Stock',
   manifest: '/manifest.json',
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Avenue' },
-  icons: { icon: '/icons/icon-192.png', apple: '/icons/apple-touch-icon.png' },
+  icons: { apple: '/icons/apple-touch-icon.png' }, // favicon.ico + icon.svg in src/app are picked up automatically
+  openGraph: { title: 'Avenue Stock', description: 'Inventory, sales and reporting for the shop floor.', images: [{ url: '/brand/og-image.png', width: 1200, height: 630 }] },
 };
 
 export const viewport: Viewport = {

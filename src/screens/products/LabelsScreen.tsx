@@ -13,6 +13,7 @@ import { api } from '@/lib/api';
 import { useApi, useDebounced } from '@/lib/use-api';
 import { cn } from '@/lib/cn';
 import { Page, PageHeader } from '@/components/app/PageHeader';
+import { LogoMark } from '@/components/app/Brand';
 import { LabelCard } from '@/components/app/Receipt';
 import { Button } from '@/components/ui/Button';
 import { Checkbox, Segmented } from '@/components/ui/Field';
@@ -148,7 +149,7 @@ export function LabelsScreen() {
                 <div className={cn('mx-auto bg-white p-3 print:p-0', template === 'a4' ? 'print-labels-a4 grid max-w-[210mm] grid-cols-3 gap-2' : 'print-labels-thermal flex flex-wrap gap-2')}>
                   {labels.map((l) => (
                     <div key={l.key} className="flex flex-col">
-                      {showLogo && template === 'a4' && <p className="eyebrow truncate px-2 pt-1 text-[8px]">{settings.data?.storeName ?? 'Avenue'}</p>}
+                      {showLogo && template === 'a4' && <p className="eyebrow flex items-center gap-1 truncate px-2 pt-1 text-[8px]"><LogoMark size={10} variant="mono" className="text-[#3F6B5C]" />{settings.data?.storeName ?? 'Avenue'}</p>}
                       <LabelCard name={l.v.product.name} variant={`${l.v.size} · ${l.v.color.name}`} sku={l.v.sku} barcode={l.v.barcode} price={l.v.sellPrice} showPrice={showPrice} showVariant={showVariant} thermal={template === 'thermal'} />
                     </div>
                   ))}
