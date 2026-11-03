@@ -9,6 +9,7 @@ const envSchema = z.object({
   EMAIL_FROM: z.string().min(1).default('Avenue Stock <no-reply@localhost>'),
   APP_URL: z.string().url().default('http://localhost:3000'),
   SESSION_SECRET: z.string().min(1).optional(),
+  BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
   SETUP_TOKEN: z.string().min(16).optional(),
   CRON_SECRET: z.string().min(1).optional(),
   VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
