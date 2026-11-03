@@ -81,7 +81,7 @@ export function CreateUserPanel({ open, onClose, onCreated }: { open: boolean; o
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1.5 text-[13px] font-medium">First sign-in</legend>
           <Segmented size="lg" grow value={mode} onChange={setMode} aria-label="First sign-in" options={[{ value: 'INVITE', label: 'Send invite link' }, { value: 'TEMP', label: 'Set temporary password' }]} />
-          {mode === 'INVITE' ? <p className="text-xs text-ink-2">Invite expires in 7 days. They choose their own password.</p> : (
+          {mode === 'INVITE' ? <p className="text-xs text-ink-2">Invite expires in 48 hours. They choose their own password.</p> : (
             <div className="flex items-center gap-2 rounded-input border border-line bg-surface-2 px-3 py-2">
               <span className="tabular flex-1 font-mono text-sm" aria-label="Temporary password">{temp}</span>
               <Button size="sm" variant="ghost" leading={<Copy />} onClick={() => { void navigator.clipboard?.writeText(temp); toast({ kind: 'info', title: 'Temporary password copied' }); }}>Copy</Button>

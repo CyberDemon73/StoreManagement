@@ -25,7 +25,7 @@ import type {
  */
 export const USE_MOCK_ALL = process.env.NEXT_PUBLIC_USE_MOCK === '1';
 const LIVE_PREFIXES = ['/auth/', '/setup', '/products', '/variants', '/brands', '/categories', '/suppliers', '/uploads', '/stock', '/sales', '/analytics', '/users', '/settings', '/audit', '/notifications', '/me/password', '/me'];
-const MOCK_ONLY = [/^\/products\/(export|import)/, /^\/variants\/[^/]+\/sold/];
+const MOCK_ONLY = [/^\/variants\/[^/]+\/sold/];
 export function isLive(path: string): boolean {
   if (USE_MOCK_ALL) return false;
   if (MOCK_ONLY.some((r) => r.test(path))) return false;

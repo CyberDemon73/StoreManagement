@@ -15,6 +15,19 @@ type Action = 'role' | 'reset' | 'signout' | 'toggle';
 export function UserActions({ user, onChange }: { user: User; onChange: (u: User) => void }) {
   const auth = useAuth();
   const { toast } = useToast();
+  const [resending, setResending] = useState(false);
+  // For an INVITED user, an EMAIL reset issues a fresh 48 h invite link and voids the old one.
+  const resendInvite = async () => {
+    setResending(true);
+    try {
+      await api.users.resetPassword(user.id, 'EMAIL');
+      toast({ kind: 'success', title: `Invite resent to ${user.email}`, body: 'The new link expires in 48 hours; the old one no longer works.' });
+    } catch (e) {
+      toast({ kind: 'error', title: "Couldn't resend the invite", body: (e as Error).message });
+    } finally {
+      setResending(false);
+    }
+  };
   const [menu, setMenu] = useState(false);
   const [dialog, setDialog] = useState<Action | null>(null);
   const [role, setRole] = useState<Role>(user.role);
@@ -49,7 +62,7 @@ export function UserActions({ user, onChange }: { user: User; onChange: (u: User
   return (
     <div className="flex items-center justify-end gap-1">
       {user.status === 'INVITED'
-        ? <Button size="sm" onClick={() => toast({ kind: 'success', title: `Invite resent to ${user.email}`, body: 'The new link expires in 7 days.' })}>Resend invite</Button>
+        ? <Button size="sm" loading={resending} onClick={() => void resendInvite()}>Resend invite</Button>
         : <Button size="sm" onClick={() => open('role')}>Edit</Button>}
       <Popover open={menu} onClose={() => setMenu(false)} anchor={<Button size="sm" variant="ghost" iconOnly aria-label={`More actions for ${user.name}`} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><MoreHorizontal /></Button>}>
         <MenuItem onClick={() => open('role')}>Edit role</MenuItem>
