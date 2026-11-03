@@ -128,7 +128,7 @@ function OpenCount({ initial, canManage, onApplied }: { initial: StockCount; can
             <Progress value={countedN} max={Math.max(1, count.items.length)} className="h-2" />
             <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void onScan(scan); }}>
               <Input size="lg" value={scan} onChange={(e) => setScan(e.target.value)} placeholder="Scan or type SKU" aria-label="Scan to count" leading={<ScanLine aria-hidden />} autoFocus />
-              <BarcodeScannerButton size="lg" label="" aria-label="Open camera scanner" iconOnly onScan={(v) => { if (!bump(v.id)) toast({ kind: 'info', title: 'Not in this count', body: `${v.sku} is outside the scope.` }); }} />
+              <BarcodeScannerButton size="lg" aria-label="Open camera scanner" onScan={(v) => { if (!bump(v.id)) toast({ kind: 'info', title: 'Not in this count', body: `${v.sku} is outside the scope.` }); }} />
             </form>
             {lastItem ? (
               <div className="flex items-center gap-2.5 rounded-input bg-surface-2 px-3 py-2.5">

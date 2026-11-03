@@ -32,15 +32,15 @@ export type BackupResult = { status: 'uploaded'; path: string; pruned: number } 
 
 export interface MaintenanceResult {
   purged: PurgeCounts;
-  /** True when it is Sunday in the store timezone: stock verify + backup ran. */
+  /** True when it is Sunday in the store timezone: the stock reconciliation ran. */
   weekly: boolean;
   stockVerify?: { ok: boolean; mismatches: number };
   backup?: BackupResult;
 }
 
-/** Weekly backups older than this are deleted after the next successful upload. */
-export const BACKUP_RETENTION_MS = 12 * 7 * DAY;
 const BACKUP_PREFIX = 'backups/';
+/** The one backup file: every daily run overwrites it, so the store always holds exactly the latest. */
+export const BACKUP_PATH = `${BACKUP_PREFIX}latest.zip`;
 
 interface BlobOpts {
   token: string | undefined;
@@ -167,13 +167,10 @@ const errInfo = (err: unknown) => {
   return { name: e.name, message: e.message };
 };
 
-/** Deletes backups past retention. Best effort: a failure is logged, never fails the backup. */
-async function pruneBackups(store: BackupStore, opts: BlobOpts, now: Date, keep: string): Promise<number> {
+/** Removes every other file under backups/ (e.g. older dated backups). Best effort: never fails the backup. */
+async function pruneBackups(store: BackupStore, opts: BlobOpts, keep: string): Promise<number> {
   try {
-    const cut = now.getTime() - BACKUP_RETENTION_MS;
-    const old = (await store.list({ ...opts, prefix: BACKUP_PREFIX })).filter(
-      (b) => b.pathname.startsWith(BACKUP_PREFIX) && b.pathname !== keep && b.uploadedAt.getTime() < cut,
-    );
+    const old = (await store.list({ ...opts, prefix: BACKUP_PREFIX })).filter((b) => b.pathname.startsWith(BACKUP_PREFIX) && b.pathname !== keep);
     if (old.length === 0) return 0;
     await store.del(
       old.map((b) => b.url),
@@ -181,44 +178,46 @@ async function pruneBackups(store: BackupStore, opts: BlobOpts, now: Date, keep:
     );
     return old.length;
   } catch (err) {
-    logger.error({ err: errInfo(err) }, 'weekly backup prune failed');
+    logger.error({ err: errInfo(err) }, 'backup prune failed');
     return 0;
   }
 }
 
-async function weeklyBackup(db: Db, localDate: string, now: Date): Promise<BackupResult> {
+async function dailyBackup(db: Db, localDate: string): Promise<BackupResult> {
   const env = getEnv();
   // Product images use a public store; backups must go to a separate private one when configured.
   const token = env.BACKUP_BLOB_READ_WRITE_TOKEN ?? env.BLOB_READ_WRITE_TOKEN;
   if (!testStore && !token) return { status: 'skipped', reason: 'BACKUP_BLOB_READ_WRITE_TOKEN / BLOB_READ_WRITE_TOKEN not set' };
   const store = testStore ?? blobStore;
-  const path = `${BACKUP_PREFIX}${localDate}.zip`;
+  const path = BACKUP_PATH;
   try {
     // Rows are paged through the streamed export; only the compressed zip is collected here.
     const { zip } = await buildDataExport(db);
     await store.write(path, zip, { token });
   } catch (err) {
-    logger.error({ err: errInfo(err) }, 'weekly backup upload failed');
+    logger.error({ err: errInfo(err) }, 'daily backup upload failed');
     await notifyAdmins(db, {
       kind: 'SYSTEM',
-      title: 'Weekly backup failed',
-      body: 'The weekly data backup could not be uploaded. Download a data export from Settings, and check that the backup Blob store is private and its token (BACKUP_BLOB_READ_WRITE_TOKEN) is valid.',
+      title: 'Daily backup failed',
+      body: 'Today\'s data backup could not be uploaded. Download a data export from Settings, and check that the backup Blob store is private and its token (BACKUP_BLOB_READ_WRITE_TOKEN) is valid.',
       href: '/settings',
       dedupeKey: `backup-failed:${localDate}`,
     });
     return { status: 'failed' };
   }
-  const pruned = await pruneBackups(store, { token }, now, path);
+  const pruned = await pruneBackups(store, { token }, path);
   return { status: 'uploaded', path, pruned };
 }
 
-/** Daily: purge stale rows. Sundays (store timezone): stock reconciliation + private backup. */
+/**
+ * Daily: purge stale rows and overwrite the private backup (backups/latest.zip).
+ * Sundays (store timezone): also the stock reconciliation.
+ */
 export async function runDailyMaintenance(db: Db, now: Date): Promise<MaintenanceResult> {
   const purged = await purgeStale(db, now);
   const { timezone } = await getSettings(db);
   const { sunday, localDate } = isStoreSunday(now, timezone);
-  if (!sunday) return { purged, weekly: false };
-  const stockVerify = await weeklyStockVerify(db, localDate);
-  const backup = await weeklyBackup(db, localDate, now);
-  return { purged, weekly: true, stockVerify, backup };
+  const stockVerify = sunday ? await weeklyStockVerify(db, localDate) : undefined;
+  const backup = await dailyBackup(db, localDate);
+  return { purged, weekly: sunday, ...(stockVerify ? { stockVerify } : {}), backup };
 }

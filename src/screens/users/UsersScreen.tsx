@@ -40,6 +40,7 @@ export function UsersScreen() {
   const [create, setCreate] = useState(false);
 
   const replace = (u: User) => list.setData((prev) => prev?.map((x) => (x.id === u.id ? { ...x, ...u } : x)));
+  const removeRow = (id: string) => list.setData((prev) => prev?.filter((x) => x.id !== id));
   const rows = list.data?.filter((u) => (roleFilter === 'ALL' || u.roles.includes(roleFilter)) && (!activeOnly || u.status === 'ACTIVE'));
 
   const columns: Column<User>[] = [
@@ -49,7 +50,7 @@ export function UsersScreen() {
     { key: 'status', header: 'Status', cell: (u) => <Badge tone={STATUS[u.status].tone} dot>{STATUS[u.status].label}</Badge> },
     { key: 'login', header: 'Last login', cell: (u) => <span className="tabular text-ink-2">{u.lastLoginAt ? `${formatDateTime(u.lastLoginAt)}${u.lastDevice ? ` · ${u.lastDevice.split(' · ')[0]}` : ''}` : '—'}</span> },
     { key: 'sessions', header: 'Sessions', cell: (u) => <span className="tabular">{u.status === 'INVITED' ? '—' : `${u.sessions ?? 0} device${u.sessions === 1 ? '' : 's'}`}</span> },
-    { key: 'actions', header: <span className="block text-right">Actions</span>, cell: (u) => <UserActions user={u} onChange={replace} /> },
+    { key: 'actions', header: <span className="block text-right">Actions</span>, cell: (u) => <UserActions user={u} onChange={replace} onDeleted={removeRow} /> },
   ];
 
   const filters = (
@@ -73,7 +74,7 @@ export function UsersScreen() {
                 <Card key={u.id} as="article" className={cn('flex flex-col gap-3', u.status === 'DISABLED' && 'opacity-60')}>
                   <div className="flex items-start gap-3"><Avatar name={u.name} size="lg" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{u.name}</p><p className="truncate text-xs text-ink-2">{u.email} · {userNote(u, auth.user?.id)}</p><div className="mt-1.5 flex flex-wrap gap-1">{u.roles.map((r) => <RoleBadge key={r} role={r} />)}<Badge tone={STATUS[u.status].tone} dot>{STATUS[u.status].label}</Badge></div></div></div>
                   <p className="tabular text-xs text-ink-2">{u.lastLoginAt ? `Last login ${formatDateTime(u.lastLoginAt)}${u.lastDevice ? ` · ${u.lastDevice}` : ''}` : 'Never signed in'} · {u.sessions ?? 0} device{u.sessions === 1 ? '' : 's'}</p>
-                  <UserActions user={u} onChange={replace} />
+                  <UserActions user={u} onChange={replace} onDeleted={removeRow} />
                 </Card>
               ))}
             </ul>

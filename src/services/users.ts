@@ -24,7 +24,7 @@ const TEMP_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789'
 const TEMP_LENGTH = 16;
 
 type UserRow = typeof users.$inferSelect;
-export type UserWithSessions = PublicUser & { sessions: number };
+export type UserWithSessions = PublicUser & { sessions: number; deletable: boolean };
 
 export function generateTemporaryPassword(): string {
   let out = '';
@@ -135,7 +135,49 @@ export async function listUsers(db: Db): Promise<UserWithSessions[]> {
     .leftJoin(sessions, and(eq(sessions.userId, users.id), gt(sessions.expiresAt, sql`now()`), gt(sessions.idleExpiresAt, sql`now()`)))
     .groupBy(users.id)
     .orderBy(asc(users.name), asc(users.email));
-  return rows.map((r) => ({ ...toPublicUser(r.user), sessions: Number(r.sessions) }));
+  const withHistory = new Set(
+    ((await db.execute(sql`${HISTORY_SQL}`)) as unknown as { rows: { user_id: string }[] }).rows.map((r) => r.user_id),
+  );
+  return rows.map((r) => ({ ...toPublicUser(r.user), sessions: Number(r.sessions), deletable: !withHistory.has(r.user.id) }));
+}
+
+/**
+ * Every user id that appears in business history. Those accounts can only be disabled: deleting
+ * them would turn their sales, refunds and stock moves into "unknown user" in reports and audits.
+ */
+const HISTORY_SQL = sql`
+  select seller_id as user_id from sales where seller_id is not null
+  union select voided_by from sales where voided_by is not null
+  union select created_by from returns where created_by is not null
+  union select user_id from stock_movements where user_id is not null
+  union select created_by from purchases where created_by is not null
+  union select started_by from stock_counts where started_by is not null
+  union select applied_by from stock_counts where applied_by is not null
+  union select counted_by from stock_count_items where counted_by is not null`;
+
+async function hasHistory(tx: Db, userId: string): Promise<boolean> {
+  const r = (await tx.execute(sql`select 1 from (${HISTORY_SQL}) h where h.user_id = ${userId} limit 1`)) as unknown as { rows: unknown[] };
+  return r.rows.length > 0;
+}
+
+/**
+ * Permanently remove an account that never sold, refunded, received or counted anything.
+ * Same guards as disable (not yourself, admins only by an admin, never the last active admin).
+ * Sessions, tokens, devices and notifications go with it (FK cascade); the audit keeps a copy.
+ */
+export async function deleteUser(db: Db, actor: AuthUser, id: string, ctx: ReqCtx): Promise<void> {
+  await db.transaction(async (tx) => {
+    await lockAdminSet(tx);
+    const before = await loadForUpdate(tx, id);
+    requireAdminFor(actor, before.role === 'ADMIN');
+    if (before.id === actor.id) throw new AppError('CONFLICT', 'You cannot delete your own account');
+    if (before.role === 'ADMIN' && before.status === 'ACTIVE') await assertAnotherActiveAdmin(tx, before.id);
+    if (await hasHistory(tx, id)) {
+      throw new AppError('CONFLICT', 'This user has sales or stock history. Disable the account instead so the history keeps their name.');
+    }
+    await tx.delete(users).where(eq(users.id, id));
+    await audit(tx, actorOf(actor, ctx), 'user.delete', 'user', id, toPublicUser(before), null);
+  });
 }
 
 export async function createUser(
