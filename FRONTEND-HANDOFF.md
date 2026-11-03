@@ -126,3 +126,7 @@ Role rules live in two places only: `src/lib/nav.ts` (what is linked / which rou
 - [x] Mock data + typed `lib/api.ts`
 - [x] PWA manifest + install prompt + update toast + offline page + print styles
 - [x] This handoff
+
+## Camera scanning
+
+The barcode scanner (`src/components/app/BarcodeScanner.tsx`) uses the native `BarcodeDetector` API where available and falls back to ZXing. Cameras only work in a secure context, so when testing on a phone over the LAN run `pnpm dev --experimental-https` (or use the Vercel preview URL). The Permissions-Policy already allows `camera=(self)`.
