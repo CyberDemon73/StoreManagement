@@ -308,6 +308,8 @@ export const api = {
   users: {
     /** GET /users */
     list: () => call<User[]>(() => store.listUsers(), 'GET', '/users'),
+    /** DELETE /users/:id → 204. Only for users with no sales or stock history (else 409). */
+    remove: (id: string) => call<void>(() => undefined, 'DELETE', `/users/${id}`),
     /** POST /users */
     /** POST /users → 201 { user, temporaryPassword? } (TEMP only, shown once). */
     create: (input: { name: string; email: string; role: Role; mode: 'INVITE' | 'TEMP' }) => call<{ user: User; temporaryPassword?: string }>(() => ({ user: store.createUser(input, ctx.userId) }), 'POST', '/users', input),

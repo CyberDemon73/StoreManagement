@@ -214,6 +214,13 @@ export const ROUTES: RouteSpec[] = [
     sampleParams: { id: '00000000-0000-4000-8000-000000000001' },
   },
   {
+    method: 'DELETE',
+    path: '/users/:id',
+    access: 'users.manage',
+    load: () => import('@/app/api/v1/users/[id]/route'),
+    sampleParams: { id: '00000000-0000-4000-8000-000000000001' },
+  },
+  {
     method: 'POST',
     path: '/users/:id/disable',
     access: 'users.manage',

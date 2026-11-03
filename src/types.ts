@@ -20,6 +20,8 @@ export interface User {
   lastDevice?: string;
   sessions?: number;
   mustChangePassword?: boolean;
+  /** True when the account has no sales or stock history and may be deleted (GET /users). */
+  deletable?: boolean;
 }
 
 export interface Brand {
