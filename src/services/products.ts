@@ -4,7 +4,7 @@ import { brands, categories, products, variants, type ProductRow, type VariantRo
 import { audit, type AuditActor } from '@/lib/audit';
 import type { AuthUser, ReqCtx } from '@/lib/auth';
 import { AppError } from '@/lib/errors';
-import { buildSku, defaultBaseSku } from '@/lib/sku';
+import { buildSku, defaultBaseSku, skuPart } from '@/lib/sku';
 import type { ProductCreateInput, ProductPatchInput, VariantMatrixInput } from '@/schemas/products';
 import {
   toProduct,
@@ -140,6 +140,23 @@ export async function addVariantsTx(tx: Db, user: AuthUser, product: ProductRow,
     .from(variants)
     .where(eq(variants.productId, product.id));
   const taken = new Set(existing.map((e) => `${e.size}|${e.colorName}`));
+
+  // Validate the whole matrix before touching the DB: a size like "!!!" strips to an empty SKU
+  // part, and "M"/"m" or "S-M"/"SM" collide into the same SKU although they are distinct cells.
+  const seenSkus = new Set<string>();
+  for (const size of matrix.sizes) {
+    for (const color of matrix.colors) {
+      if (!skuPart(size) || !skuPart(color.name)) {
+        throw new AppError('VALIDATION', 'Invalid variant matrix', { fields: { variants: `Size "${size}" or colour "${color.name}" has no letters or digits for the SKU` } });
+      }
+      const sku = buildSku(product.baseSku, size, color.name);
+      if (seenSkus.has(sku)) {
+        throw new AppError('VALIDATION', 'Invalid variant matrix', { fields: { variants: `Two cells produce the same SKU ${sku}` } });
+      }
+      seenSkus.add(sku);
+    }
+  }
+
   const { lowStockDefault } = await getSettings(tx);
   const sellPrice = matrix.sellPrice ?? product.defaultPrice;
   const costPrice = matrix.costPrice ?? product.defaultCost ?? null;
@@ -235,6 +252,8 @@ export async function patchProduct(db: Db, user: AuthUser, id: string, patch: Pr
 export async function setProductStatus(db: Db, user: AuthUser, id: string, status: 'ACTIVE' | 'ARCHIVED', ctx: ReqCtx): Promise<ProductDetailOut> {
   await db.transaction(async (tx) => {
     const before = await loadProduct(tx, id);
+    // Idempotent: re-archiving an archived product changes nothing and writes no audit row.
+    if (before.status === status) return;
     const [after] = await tx
       .update(products)
       .set({ status, updatedAt: new Date() })

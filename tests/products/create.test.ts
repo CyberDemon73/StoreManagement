@@ -113,3 +113,19 @@ describe('POST /products', () => {
     expect(res.status).toBe(403);
   });
 });
+
+describe('matrix SKU safety (review fixes)', () => {
+  it('rejects a matrix whose cells collide into the same SKU or produce an empty SKU part, inserting nothing', async () => {
+    const db = getDb();
+    const { brand, category } = await seedCatalog(db);
+    const m = await createUser(db, { role: 'MANAGER' });
+    const cookie = await sessionCookieFor(db, m.id);
+    const base = { name: 'Collide', brandId: brand.id, categoryId: category.id, defaultPrice: 1000 };
+    const collide = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { ...base, variants: { sizes: ['M', 'm'], colors: [{ name: 'Black', hex: '#000000' }] } } });
+    expect(collide.status).toBe(400);
+    expect((await collide.json()).error.fields.variants).toBeTypeOf('string');
+    const empty = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { ...base, variants: { sizes: ['!!!'], colors: [{ name: 'Black', hex: '#000000' }] } } });
+    expect(empty.status).toBe(400);
+    expect(await db.select().from(products)).toHaveLength(0);
+  });
+});

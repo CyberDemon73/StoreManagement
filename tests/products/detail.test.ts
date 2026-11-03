@@ -6,7 +6,7 @@ import { POST as UNARCHIVE } from '@/app/api/v1/products/[id]/unarchive/route';
 import { POST as CREATE } from '@/app/api/v1/products/route';
 import { getDb } from '@/db/client';
 import { auditLog } from '@/db/schema';
-import { expectNoSellerKeys, seedCatalog } from '../helpers/catalog';
+import { createProductDirect, expectNoSellerKeys, seedCatalog } from '../helpers/catalog';
 import { call } from '../helpers/http';
 import { createUser, sessionCookieFor } from '../helpers/users';
 
@@ -134,5 +134,22 @@ describe('POST /products/:id/archive and /unarchive', () => {
     const { product, sellerCookie } = await fixture();
     const res = await call(ARCHIVE, { method: 'POST', path: `/api/v1/products/${product.id}/archive`, cookie: sellerCookie, params: { id: product.id } });
     expect(res.status).toBe(403);
+  });
+});
+
+describe('archive idempotence (review fix)', () => {
+  it('archiving an already archived product is a no-op without a new audit row', async () => {
+    const db = getDb();
+    const { brand, category } = await seedCatalog(db);
+    const p = await createProductDirect(db, { name: 'X', baseSku: 'NO-X', brandId: brand.id, categoryId: category.id, defaultPrice: 100 });
+    const m = await createUser(db, { role: 'MANAGER' });
+    const cookie = await sessionCookieFor(db, m.id);
+    const first = await call(ARCHIVE, { method: 'POST', path: `/api/v1/products/${p.id}/archive`, cookie, params: { id: p.id } });
+    expect(first.status).toBe(200);
+    const auditCount = (await db.select().from(auditLog)).length;
+    const second = await call(ARCHIVE, { method: 'POST', path: `/api/v1/products/${p.id}/archive`, cookie, params: { id: p.id } });
+    expect(second.status).toBe(200);
+    expect((await second.json()).status).toBe('ARCHIVED');
+    expect(await db.select().from(auditLog)).toHaveLength(auditCount);
   });
 });

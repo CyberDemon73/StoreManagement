@@ -65,12 +65,22 @@ export async function patchVariant(db: Db, user: AuthUser, id: string, patch: Va
 /** Hard delete is allowed only for a cell that never touched the ledger; otherwise deactivate it. */
 export async function deleteVariant(db: Db, user: AuthUser, id: string, ctx: ReqCtx): Promise<void> {
   await db.transaction(async (tx) => {
+    // Lock the row so a concurrent applyMovement cannot slip a ledger row in between the check and the delete.
+    await tx.execute(sql`select 1 from variants where id = ${id} for update`);
     const before = await loadVariant(tx, id);
     const [m] = await tx.select({ n: count() }).from(stockMovements).where(eq(stockMovements.variantId, id));
     if (before.quantity !== 0 || (m?.n ?? 0) > 0) {
       throw new AppError('CONFLICT', 'Variant has stock or movements');
     }
-    await tx.delete(variants).where(eq(variants.id, id));
+    try {
+      await tx.delete(variants).where(eq(variants.id, id));
+    } catch (err) {
+      // FK restrict from stock_movements (23503): a movement landed anyway → conflict, not 500.
+      if ((err as { cause?: { code?: string } }).cause?.code === '23503') {
+        throw new AppError('CONFLICT', 'Variant has stock or movements');
+      }
+      throw err;
+    }
     await audit(tx, actorOf(user, ctx), 'variant.delete', 'variant', id, toVariant(before), null);
   });
 }
