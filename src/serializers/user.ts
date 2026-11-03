@@ -5,7 +5,9 @@ export interface PublicUser {
   name: string;
   email: string;
   role: Role;
-  status: 'ACTIVE' | 'DISABLED';
+  /** One role per account today; a list so the frontend role switcher keeps working. */
+  roles: Role[];
+  status: 'ACTIVE' | 'DISABLED' | 'INVITED';
   mustChangePassword: boolean;
   lastLoginAt: string | null;
   createdAt: string;
@@ -16,7 +18,7 @@ interface UserLike {
   name: string;
   email: string;
   role: Role;
-  status: 'ACTIVE' | 'DISABLED';
+  status: 'ACTIVE' | 'DISABLED' | 'INVITED';
   mustChangePassword: boolean;
   lastLoginAt?: Date | null;
   createdAt?: Date;
@@ -29,6 +31,7 @@ export function toPublicUser(u: UserLike): PublicUser {
     name: u.name,
     email: u.email,
     role: u.role,
+    roles: [u.role],
     status: u.status,
     mustChangePassword: u.mustChangePassword,
     lastLoginAt: u.lastLoginAt ? u.lastLoginAt.toISOString() : null,

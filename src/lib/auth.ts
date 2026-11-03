@@ -18,7 +18,7 @@ export interface AuthUser {
   name: string;
   email: string;
   role: Role;
-  status: 'ACTIVE' | 'DISABLED';
+  status: 'ACTIVE' | 'DISABLED' | 'INVITED';
   mustChangePassword: boolean;
   sessionId: string;
 }
@@ -163,6 +163,8 @@ function requestId(req: Request): string {
   return crypto.randomUUID();
 }
 
+const MUST_CHANGE_ALLOWED = new Set(['/api/v1/auth/me', '/api/v1/auth/logout', '/api/v1/me/password']);
+
 function isAuthPath(req: Request): boolean {
   const path = new URL(req.url).pathname;
   return path.startsWith('/api/v1/auth/') || path === '/api/v1/setup';
@@ -183,6 +185,10 @@ export function withAuth(opts: AuthOptions, handler: (req: Request, ctx: Handler
         // Rate-limit before the permission check so a session hammering routes it is not
         // allowed to call (403s) burns its quota just like allowed traffic does.
         await enforce(apiUserLimiter, user.id);
+        // A temporary or admin-reset password must be replaced before anything else is allowed.
+        if (user.mustChangePassword && !MUST_CHANGE_ALLOWED.has(new URL(req.url).pathname)) {
+          throw new AppError('FORBIDDEN', 'Change your password to continue', { fields: { password: 'Password change required' } });
+        }
         if ('permission' in opts) requirePermission(user, opts.permission);
       }
       const params = await routeCtx.params;

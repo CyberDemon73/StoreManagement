@@ -1,9 +1,9 @@
 import { sql } from 'drizzle-orm';
-import { boolean, index, inet, integer, pgEnum, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, inet, integer, pgEnum, pgTable, primaryKey, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 import { citext } from '../columns';
 
 export const roleEnum = pgEnum('role', ['ADMIN', 'MANAGER', 'SELLER']);
-export const userStatusEnum = pgEnum('user_status', ['ACTIVE', 'DISABLED']);
+export const userStatusEnum = pgEnum('user_status', ['ACTIVE', 'DISABLED', 'INVITED']);
 export const tokenPurposeEnum = pgEnum('token_purpose', ['RESET', 'INVITE']);
 
 export const users = pgTable('users', {
@@ -56,6 +56,19 @@ export const failedLogins = pgTable('failed_logins', {
   lockedUntil: timestamp('locked_until', { withTimezone: true }),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+/** Devices (sha256 of the user agent) a user has signed in from; a new one triggers a notification. */
+export const knownDevices = pgTable(
+  'known_devices',
+  {
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    deviceHash: text('device_hash').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.userId, t.deviceHash] })],
+);
 
 export type UserRow = typeof users.$inferSelect;
 export type SessionRow = typeof sessions.$inferSelect;
