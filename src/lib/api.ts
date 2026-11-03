@@ -133,8 +133,9 @@ export const api = {
         const r = await call<{ user: User }>(() => ({ user: store.login(email, password) }), 'POST', '/auth/login', { email, password, remember });
         return { user: withRoles(r.user) };
       } catch (e) {
-        // The server answers 403 FORBIDDEN "Account disabled"; the login screen has its own copy for that.
-        if (e instanceof ApiError && e.code === 'FORBIDDEN') throw new ApiError('ACCOUNT_DISABLED', e.message, e.status);
+        // The server answers 403 FORBIDDEN "Account disabled" for a disabled user. Other 403s (for
+        // example the CSRF origin check when APP_URL does not match the page origin) keep their message.
+        if (e instanceof ApiError && e.code === 'FORBIDDEN' && /disabled/i.test(e.message)) throw new ApiError('ACCOUNT_DISABLED', e.message, e.status);
         throw e;
       }
     },

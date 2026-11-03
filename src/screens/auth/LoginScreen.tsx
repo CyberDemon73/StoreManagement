@@ -61,6 +61,7 @@ export function LoginScreen() {
     ACCOUNT_DISABLED: { title: 'This account is disabled', body: 'Contact Omar Mansour (Admin) to re-enable it.' },
     LOCKED: { title: 'Too many attempts — locked', body: `Try again in ${minutes} minute${minutes === 1 ? '' : 's'}, or reset your password.` },
     RATE_LIMITED: { title: 'Slow down', body: `Too many requests from this device. Wait ${countdown} seconds and try again.` },
+    FORBIDDEN: { title: 'Request blocked by the server', body: "This page address does not match the server's APP_URL setting. Open the app at the configured address (host and port) and try again." },
   };
   const banner = error ? (BANNERS[error.code] ?? { title: "Couldn't sign in", body: error.message }) : null;
 
