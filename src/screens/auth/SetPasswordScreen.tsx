@@ -32,7 +32,7 @@ export function SetPasswordScreen() {
       // The response set the session cookie; a full load lets the app read the new session.
       window.location.replace(homeFor(user.role));
     } catch (err) {
-      if (err instanceof ApiError && err.code === 'VALIDATION' && /token/i.test(err.message)) setInvalid(true);
+      if (err instanceof ApiError && err.code === 'VALIDATION' && /token|invit/i.test(err.message)) setInvalid(true);
       else setError(err instanceof ApiError && err.fields?.password ? err.fields.password : (err as Error).message);
       setBusy(false);
     }
