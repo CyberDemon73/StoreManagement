@@ -21,7 +21,7 @@ export interface MovementResult {
   costPrice: number | null;
 }
 
-interface LockedVariant {
+interface LockedRow {
   quantity: number;
   cost_price: number | null;
 }
@@ -38,7 +38,7 @@ export async function applyMovement(tx: Db, input: MovementInput): Promise<Movem
 
   const locked = (await tx.execute(
     sql`select quantity, cost_price from variants where id = ${input.variantId} for update`,
-  )) as { rows: LockedVariant[] };
+  )) as { rows: LockedRow[] };
   const current = locked.rows[0];
   if (!current) throw new AppError('NOT_FOUND', 'Variant not found');
 
@@ -70,6 +70,7 @@ export async function applyMovement(tx: Db, input: MovementInput): Promise<Movem
       variantId: input.variantId,
       type: input.type,
       qtyDelta: input.qtyDelta,
+      qtyAfter: newQty,
       unitCost: input.unitCost ?? null,
       referenceKind: input.reference?.kind ?? null,
       referenceId: input.reference?.id ?? null,
@@ -84,4 +85,51 @@ export async function applyMovement(tx: Db, input: MovementInput): Promise<Movem
   );
 
   return { movementId: movement.id, quantity: newQty, costPrice };
+}
+
+export interface LockedVariant {
+  quantity: number;
+  costPrice: number | null;
+}
+
+/**
+ * Lock several variant rows in one statement, in id order, so concurrent multi-variant
+ * transactions (sales, purchases, counts) always acquire locks in the same sequence and
+ * cannot deadlock. Call this before the first applyMovement of a transaction.
+ */
+export async function lockVariants(tx: Db, ids: string[]): Promise<Map<string, LockedVariant>> {
+  const unique = [...new Set(ids)].sort();
+  if (unique.length === 0) return new Map();
+  const result = (await tx.execute(
+    sql`select id, quantity, cost_price from variants where id = any(${sql.raw(`array[${unique.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')}]::uuid[]`)}) order by id for update`,
+  )) as { rows: { id: string; quantity: number; cost_price: number | null }[] };
+  const map = new Map<string, LockedVariant>();
+  for (const r of result.rows) map.set(r.id, { quantity: Number(r.quantity), costPrice: r.cost_price == null ? null : Number(r.cost_price) });
+  const missing = unique.filter((id) => !map.has(id));
+  if (missing.length > 0) {
+    throw new AppError('NOT_FOUND', 'Variant not found', { fields: Object.fromEntries(missing.map((id) => [id, 'Variant not found'])) });
+  }
+  return map;
+}
+
+/** Lock every variant first (sorted), then apply the movements in the given order. */
+export async function applyMovements(tx: Db, inputs: MovementInput[]): Promise<MovementResult[]> {
+  await lockVariants(
+    tx,
+    inputs.map((i) => i.variantId),
+  );
+  const out: MovementResult[] = [];
+  for (const input of inputs) out.push(await applyMovement(tx, input));
+  return out;
+}
+
+export type NumberPrefix = 'PO' | 'SC' | 'AS';
+
+/** Allocate the next document number (e.g. PO-000001) under a row lock on sale_counters. */
+export async function nextNumber(tx: Db, prefix: NumberPrefix): Promise<string> {
+  await tx.execute(sql`insert into sale_counters (prefix) values (${prefix}) on conflict (prefix) do nothing`);
+  const locked = (await tx.execute(sql`select next from sale_counters where prefix = ${prefix} for update`)) as { rows: { next: number }[] };
+  const n = Number(locked.rows[0]?.next ?? 1);
+  await tx.execute(sql`update sale_counters set next = ${n + 1} where prefix = ${prefix}`);
+  return `${prefix}-${String(n).padStart(6, '0')}`;
 }

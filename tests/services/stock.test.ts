@@ -4,7 +4,7 @@ import { getDb } from '@/db/client';
 import { brands, categories, products, settings, stockMovements, variants } from '@/db/schema';
 import { verifyStock } from '@/db/verify-stock';
 import { AppError } from '@/lib/errors';
-import { applyMovement } from '@/services/stock';
+import { applyMovement, applyMovements, lockVariants, nextNumber } from '@/services/stock';
 
 async function fixture() {
   const db = getDb();
@@ -91,5 +91,51 @@ describe('verifyStock', () => {
     const result = await verifyStock(db);
     expect(result.ok).toBe(false);
     expect(result.mismatches).toEqual([{ variantId, quantity: 99, ledger: 7 }]);
+  });
+});
+
+describe('ledger extensions (sprint 2)', () => {
+  it('records qtyAfter on every movement', async () => {
+    const { db, variantId } = await fixture();
+    await db.transaction((tx) => applyMovement(tx, { variantId, type: 'INITIAL', qtyDelta: 10, unitCost: 500, userId: null }));
+    await db.transaction((tx) => applyMovement(tx, { variantId, type: 'SALE', qtyDelta: -3, userId: null }));
+    const rows = await db.select({ after: stockMovements.qtyAfter }).from(stockMovements).orderBy(stockMovements.createdAt, stockMovements.id);
+    expect(rows.map((r) => r.after)).toEqual([10, 7]);
+  });
+
+  it('lockVariants returns the locked rows and rejects unknown ids', async () => {
+    const { db, variantId } = await fixture();
+    const locked = await db.transaction((tx) => lockVariants(tx, [variantId]));
+    expect(locked.get(variantId)).toEqual({ quantity: 0, costPrice: null });
+    let err: unknown;
+    try {
+      await db.transaction((tx) => lockVariants(tx, [variantId, '00000000-0000-4000-8000-000000000000']));
+    } catch (e) {
+      err = e;
+    }
+    expect((err as AppError).code).toBe('NOT_FOUND');
+    expect((err as AppError).fields?.['00000000-0000-4000-8000-000000000000']).toBeTypeOf('string');
+  });
+
+  it('applyMovements locks all variants then applies in input order', async () => {
+    const { db, variantId: a } = await fixture();
+    const [b] = await db.insert(variants).values({ productId: (await db.select().from(variants))[0]!.productId, size: 'M', colorName: 'Black', colorHex: '#000000', sku: 'NO-CHI-M-BLACK', sellPrice: 1000 }).returning();
+    const results = await db.transaction((tx) =>
+      applyMovements(tx, [
+        { variantId: b!.id, type: 'INITIAL', qtyDelta: 4, unitCost: 100, userId: null },
+        { variantId: a, type: 'INITIAL', qtyDelta: 2, unitCost: 100, userId: null },
+        { variantId: b!.id, type: 'SALE', qtyDelta: -1, userId: null },
+      ]),
+    );
+    expect(results.map((r) => r.quantity)).toEqual([4, 2, 3]);
+    expect((await qty(b!.id)).quantity).toBe(3);
+    expect((await qty(a)).quantity).toBe(2);
+  });
+
+  it('nextNumber allocates zero-padded sequential numbers per prefix', async () => {
+    const db = getDb();
+    expect(await db.transaction((tx) => nextNumber(tx, 'PO'))).toBe('PO-000001');
+    expect(await db.transaction((tx) => nextNumber(tx, 'PO'))).toBe('PO-000002');
+    expect(await db.transaction((tx) => nextNumber(tx, 'SC'))).toBe('SC-000001');
   });
 });

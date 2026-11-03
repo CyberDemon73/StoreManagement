@@ -67,9 +67,9 @@ describe('catalog schema', () => {
       .insert(variants)
       .values({ productId: product.id, size: 'S', colorName: 'Black', colorHex: '#000000', sku: 'Y-S-BLACK', sellPrice: 1 })
       .returning();
-    const [m] = await db.insert(stockMovements).values({ variantId: v!.id, type: 'INITIAL', qtyDelta: -2, unitCost: 500 }).returning();
+    const [m] = await db.insert(stockMovements).values({ variantId: v!.id, type: 'INITIAL', qtyDelta: -2, qtyAfter: -2, unitCost: 500 }).returning();
     expect(m).toMatchObject({ type: 'INITIAL', qtyDelta: -2, unitCost: 500, referenceKind: null, userId: null });
-    expect(await pgCode(db.insert(stockMovements).values({ variantId: '00000000-0000-4000-8000-000000000000', type: 'SALE', qtyDelta: 1 }))).toBe('23503');
+    expect(await pgCode(db.insert(stockMovements).values({ variantId: '00000000-0000-4000-8000-000000000000', type: 'SALE', qtyDelta: 1, qtyAfter: 1 }))).toBe('23503');
   });
 
   it('enforces unique supplier name and unique root category name (23505)', async () => {
