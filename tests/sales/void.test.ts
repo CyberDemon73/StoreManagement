@@ -54,10 +54,10 @@ describe('POST /sales/:id/void', () => {
   });
 
   it('is forbidden for sellers', async () => {
-    const { sale, sellerCookie } = await setup();
+    const { sale, variants: [a], sellerCookie } = await setup();
     const res = await post(sellerCookie, sale.id, { reason: 'x' });
     expect(res.status).toBe(403);
-    expect(await qty(sale.items[0]!.variantId)).toBe(8);
+    expect(await qty(a.id)).toBe(8);
   });
 
   it('validates the body and 404s unknown sales', async () => {
