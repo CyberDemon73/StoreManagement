@@ -7,7 +7,10 @@ export interface RouteSpec {
   method: RouteMethod;
   /** Path relative to /api/v1, with `:param` for dynamic segments. */
   path: string;
-  /** 'public' (no session), 'auth' (any role), or the permission key from docs/ACCESS-MATRIX.md. */
+  /**
+   * 'public' (no session), 'auth' (any role), or the permission key from docs/ACCESS-MATRIX.md.
+   * Must match the options passed to withAuth in the route file; tests/authz/matrix.test.ts asserts it.
+   */
   access: 'public' | 'auth' | Permission;
   load: () => Promise<Partial<Record<RouteMethod, RouteHandler>>>;
   /** Body that passes validation, so the authz test reaches the permission check. */

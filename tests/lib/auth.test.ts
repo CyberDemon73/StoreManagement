@@ -145,6 +145,12 @@ describe('withAuth', () => {
     expect(JSON.parse(text)).toEqual({ error: { code: 'INTERNAL', message: 'Internal error' } });
     expect(text).not.toContain('secret detail');
   });
+
+  it('attaches its options as a non-enumerable .auth for introspection', () => {
+    const fn = withAuth({ permission: 'audit.read' }, async () => json({}));
+    expect(fn.auth).toEqual({ permission: 'audit.read' });
+    expect(Object.keys(fn)).not.toContain('auth');
+  });
 });
 
 describe('stripCostFields', () => {

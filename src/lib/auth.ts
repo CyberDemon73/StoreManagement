@@ -43,6 +43,14 @@ export type RouteHandler = (req: Request, ctx: RouteContext) => Promise<Response
 
 export type AuthOptions = { permission: Permission } | { auth: true } | { public: true };
 
+/** A RouteHandler produced by withAuth, carrying its options so tests can introspect them. */
+export interface AuthedRouteHandler extends RouteHandler {
+  readonly auth: AuthOptions;
+}
+
+/** Message of the 401 withAuth emits for a missing session; tests use it to tell that 401 from a route's own. */
+export const UNAUTHENTICATED_MESSAGE = 'Authentication required';
+
 export function generateToken(): string {
   return randomBytes(32).toString('base64url');
 }
@@ -158,16 +166,18 @@ function requestId(req: Request): string {
  * Wrap a route handler: resolve the session, enforce the permission, apply the per-user
  * rate limit, and turn every thrown error into the uniform envelope.
  */
-export function withAuth(opts: AuthOptions, handler: (req: Request, ctx: HandlerCtx) => Promise<Response>): RouteHandler {
-  return async (req, routeCtx) => {
+export function withAuth(opts: AuthOptions, handler: (req: Request, ctx: HandlerCtx) => Promise<Response>): AuthedRouteHandler {
+  const fn: RouteHandler = async (req, routeCtx) => {
     const id = requestId(req);
     try {
       const db = getDb();
       const user = await getSessionUser(db, req);
       if (!('public' in opts)) {
-        if (!user) throw new AppError('UNAUTHENTICATED', 'Authentication required');
-        if ('permission' in opts) requirePermission(user, opts.permission);
+        if (!user) throw new AppError('UNAUTHENTICATED', UNAUTHENTICATED_MESSAGE);
+        // Rate-limit before the permission check so a session hammering routes it is not
+        // allowed to call (403s) burns its quota just like allowed traffic does.
         await enforce(apiUserLimiter, user.id);
+        if ('permission' in opts) requirePermission(user, opts.permission);
       }
       const params = await routeCtx.params;
       const res = await handler(req, {
@@ -182,4 +192,7 @@ export function withAuth(opts: AuthOptions, handler: (req: Request, ctx: Handler
       return errorResponse(err, id);
     }
   };
+  // Non-enumerable so the options never leak into anything that spreads or serializes the handler.
+  Object.defineProperty(fn, 'auth', { value: opts, enumerable: false });
+  return fn as AuthedRouteHandler;
 }
