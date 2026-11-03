@@ -21,6 +21,7 @@ import { QuantityInput, SearchInput } from '@/components/ui/Controls';
 import { ColorSwatch } from '@/components/ui/Badge';
 import { EmptyState, ErrorState, Skeleton, SkeletonRows } from '@/components/ui/States';
 import type { ProductDetail, Variant, VariantWithProduct } from '@/types';
+import { printOrShare } from '@/lib/print-share';
 
 type CopiesMode = 'onhand' | 'variant' | 'custom';
 type Template = 'a4' | 'thermal';
@@ -72,7 +73,7 @@ export function LabelsScreen() {
   return (
     <>
       <PageHeader className="no-print" title="Print labels" back="/products" crumbs={[{ label: 'Products', href: '/products' }, { label: 'Print labels' }]}
-        actions={<Button variant="primary" leading={<Printer />} disabled={total === 0} onClick={() => window.print()}>Print {total} label{total === 1 ? '' : 's'}</Button>} />
+        actions={<Button variant="primary" leading={<Printer />} disabled={total === 0} onClick={() => void printOrShare('labels')}>Print {total} label{total === 1 ? '' : 's'}</Button>} />
       <Page wide className="print:p-0">
         <div className="grid gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">
           <div className="no-print flex flex-col gap-4">

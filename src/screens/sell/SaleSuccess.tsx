@@ -9,6 +9,7 @@ import { Button } from '@/components/ui/Button';
 import { Receipt } from '@/components/app/Receipt';
 import { useToast } from '@/components/ui/Toast';
 import type { Sale, Settings } from '@/types';
+import { printOrShare } from '@/lib/print-share';
 
 export function receiptText(sale: Sale, storeName = 'Avenue'): string {
   const lines = sale.items.map((i) => `${i.productName} ${i.size}·${i.color.name} ×${i.qty}  ${formatMoney(i.lineTotal)}`);
@@ -44,7 +45,7 @@ export function SaleSuccess({ sale, settings, onNew }: { sale: Sale; settings?: 
         <Receipt sale={sale} settings={settings} />
         <div className="grid w-full max-w-[320px] grid-cols-2 gap-2.5 no-print">
           <Button size="lg" leading={<Share2 />} onClick={() => void share()}>Share receipt</Button>
-          <Button size="lg" leading={<Printer />} onClick={() => window.print()}>Print</Button>
+          <Button size="lg" leading={<Printer />} onClick={() => void printOrShare(`receipt-${sale.number}`)}>Print</Button>
         </div>
       </div>
       <footer className="no-print border-t border-line bg-surface px-4 py-3 safe-bottom md:px-6">

@@ -15,6 +15,7 @@ import { ErrorState, SkeletonRows } from '@/components/ui/States';
 import { useToast } from '@/components/ui/Toast';
 import { Receipt } from '@/components/app/Receipt';
 import type { Sale } from '@/types';
+import { printOrShare } from '@/lib/print-share';
 
 export function SaleDetailPanel({ saleId, fallback, onClose, onChanged }: { saleId: string | undefined; fallback?: Sale; onClose: () => void; onChanged: (s: Sale) => void }) {
   const auth = useAuth();
@@ -87,7 +88,7 @@ export function SaleDetailPanel({ saleId, fallback, onClose, onChanged }: { sale
       </Panel>
 
       <Dialog open={printOpen} onClose={() => setPrintOpen(false)} title="Receipt" description="80 mm roll · opens the browser print dialog." className="no-print-wrapper"
-        footer={<><Button onClick={() => setPrintOpen(false)}>Close</Button><Button variant="primary" leading={<Printer />} onClick={() => window.print()} data-autofocus>Print</Button></>}>
+        footer={<><Button onClick={() => setPrintOpen(false)}>Close</Button><Button variant="primary" leading={<Printer />} onClick={() => void printOrShare(`receipt-${sale?.number ?? 'sale'}`)} data-autofocus>Print</Button></>}>
         {sale && <Receipt sale={sale} settings={settings.data} />}
       </Dialog>
 

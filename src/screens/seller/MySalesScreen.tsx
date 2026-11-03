@@ -20,6 +20,7 @@ import { Segmented } from '@/components/ui/Field';
 import { Dialog, Panel } from '@/components/ui/Overlay';
 import { EmptyState, ErrorState, Skeleton } from '@/components/ui/States';
 import type { DateRangePreset, Sale } from '@/types';
+import { printOrShare } from '@/lib/print-share';
 
 type Preset = Extract<DateRangePreset, 'today' | '7d' | '30d'>;
 const PRESETS: { value: Preset; label: string }[] = [{ value: 'today', label: 'Today' }, { value: '7d', label: '7d' }, { value: '30d', label: '30d' }];
@@ -80,7 +81,7 @@ export function MySalesScreen() {
         {open && <SaleDetail sale={open} />}
       </Panel>
 
-      <Dialog open={receiptOpen && !!open} onClose={() => setReceiptOpen(false)} title="Receipt" footer={<div className="flex justify-end gap-2 no-print"><Button onClick={() => setReceiptOpen(false)}>Close</Button><Button variant="primary" leading={<Printer />} onClick={() => window.print()}>Print</Button></div>}>
+      <Dialog open={receiptOpen && !!open} onClose={() => setReceiptOpen(false)} title="Receipt" footer={<div className="flex justify-end gap-2 no-print"><Button onClick={() => setReceiptOpen(false)}>Close</Button><Button variant="primary" leading={<Printer />} onClick={() => void printOrShare(`receipt-${open?.number ?? "sale"}`)}>Print</Button></div>}>
         {open && <Receipt sale={open} settings={settings.data} />}
       </Dialog>
     </>
