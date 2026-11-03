@@ -30,12 +30,13 @@ export const viewport: Viewport = {
 const themeBootstrap = `(function(){try{var t=localStorage.getItem('avenue.theme');var d=t==='dark'||((!t||t==='system')&&matchMedia('(prefers-color-scheme: dark)').matches);if(d)document.documentElement.classList.add('dark');}catch(e){}})();`;
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  // src/middleware.ts sets a per-request CSP nonce and forwards it as `x-nonce`.
+  // src/middleware.ts sets a per-request CSP nonce and forwards it as `x-nonce`. Browsers hide the nonce
+  // value from the DOM, so React would report a hydration mismatch on it; the attribute is suppressed.
   const nonce = (await headers()).get('x-nonce') ?? undefined;
   return (
     <html lang="en" className={inter.variable} suppressHydrationWarning>
       <head>
-        <script nonce={nonce} dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
+        <script nonce={nonce} suppressHydrationWarning dangerouslySetInnerHTML={{ __html: themeBootstrap }} />
       </head>
       <body className="min-h-dvh">
         <Providers>{children}</Providers>
