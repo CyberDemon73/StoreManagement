@@ -10,7 +10,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { CircleAlert, Eye, EyeOff } from 'lucide-react';
 import { ApiError } from '@/lib/api';
-import { homeFor, useAuth } from '@/lib/auth-context';
+import { useAuth } from '@/lib/auth-context';
+import { landingFor } from '@/lib/landing';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Checkbox, Field, Input } from '@/components/ui/Field';
@@ -28,7 +29,7 @@ export function LoginScreen() {
   const [countdown, setCountdown] = useState(0);
   const next = params.get('next');
 
-  useEffect(() => { if (auth.ready && auth.user) router.replace(next && next !== '/' ? next : homeFor(auth.role)); }, [auth.ready, auth.user, auth.role, router, next]);
+  useEffect(() => { if (auth.ready && auth.user) router.replace(landingFor(auth.role, next)); }, [auth.ready, auth.user, auth.role, router, next]);
   useEffect(() => { if (countdown <= 0) return; const t = setTimeout(() => setCountdown((c) => c - 1), 1000); return () => clearTimeout(t); }, [countdown]);
 
   const submit = async (e: React.FormEvent) => {
@@ -36,7 +37,7 @@ export function LoginScreen() {
     setBusy(true); setError(null);
     try {
       const user = await auth.login(email, password, remember);
-      router.replace(next && next !== '/' ? next : homeFor(user.role));
+      router.replace(landingFor(user.role, next));
     } catch (err) {
       const ae = err instanceof ApiError ? err : new ApiError('INTERNAL', (err as Error).message, 500);
       setError(ae);

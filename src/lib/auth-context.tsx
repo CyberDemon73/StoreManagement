@@ -105,9 +105,7 @@ export function useAuth(): AuthValue {
 }
 
 /** Home route for a role. */
-export function homeFor(role: Role): string {
-  return role === 'SELLER' ? '/home' : '/dashboard';
-}
+export { homeFor } from '@/lib/landing';
 
 /** Redirects to /login when there is no session. Renders nothing until the session is read. */
 export function useRequireSession(): AuthValue | null {
