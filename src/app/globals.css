@@ -109,6 +109,12 @@
 /* ---------- Base ---------- */
 html {
   background: var(--bg);
+  /* Safety net: one over-wide row must never make the whole phone page pan sideways or zoom out.
+     `clip` (not `hidden`) keeps position: sticky working. Inner scrollers still scroll. */
+  overflow-x: clip;
+}
+body {
+  overflow-x: clip;
 }
 body {
   background: var(--bg);

@@ -21,6 +21,7 @@ import type { ColorRef } from '@/types';
 import { checklist, derive, DRAFT_KEY, type DraftRecord, EMPTY_FORM, type FormErrors, formFromProduct, type ProductFormState, STEPS, suggestBaseSku, validate } from './product-form';
 import { useCatalog } from './products-shared';
 import { BasicsSection, ImagesSection, PricingSection, ReviewRail, SectionCard, VariantsSection } from './ProductEditSections';
+import { isFootwearCategory } from '@/lib/sizes';
 
 /** Only non-empty barcodes for cells that are still in the matrix. */
 function cleanBarcodes(form: ProductFormState): Record<string, string> | undefined {
@@ -125,6 +126,9 @@ export function ProductEditScreen({ id }: { id?: string }) {
   const draftLabel = draft && !isEdit ? `Draft saved ${formatTime(draft.savedAt)}` : undefined;
   const title = isEdit ? (product.data?.name ?? 'Edit product') : 'New product';
   const tint = product.data?.tint ?? form.colors[0]?.hex;
+  // Footwear gets shoe sizes 30–50 first: match the chosen category or its parent by name.
+  const chosenCategory = catalog.categories.find((c) => c.id === form.categoryId);
+  const footwear = isFootwearCategory(chosenCategory?.name) || isFootwearCategory(catalog.categories.find((c) => c.id === chosenCategory?.parentId)?.name);
 
   if (isEdit && product.error && !product.data) {
     return <><PageHeader title="Edit product" back="/products" crumbs={[{ label: 'Products', href: '/products' }]} /><Page><ErrorState error={product.error} onRetry={() => void product.refetch()} /></Page></>;
@@ -146,7 +150,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
             <SectionCard id={`m-${step}`} title={`${step + 1} · ${stepLabel}`}>
               {step === 0 && <BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} />}
               {step === 1 && <ImagesSection form={form} set={set} tint={tint} />}
-              {step === 2 && <VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} />}
+              {step === 2 && <VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} footwear={footwear} />}
               {step === 3 && <PricingSection form={form} set={set} errors={shownErrors} derived={derived} />}
               {step === 4 && <ReviewRail checks={checks} derived={derived} isEdit={isEdit} onSave={() => void submit()} onDraft={saveDraft} saving={saving} draftLabel={draftLabel} onJump={(k) => setStep(STEPS.indexOf(k))} />}
             </SectionCard>
@@ -177,7 +181,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
             <div className="flex min-w-0 flex-col gap-4">
               <SectionCard id="s-basics" title="1 · Basics"><BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} /></SectionCard>
               <SectionCard id="s-images" title="2 · Images"><ImagesSection form={form} set={set} tint={tint} /></SectionCard>
-              <SectionCard id="s-variants" title="3 · Variants"><VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} /></SectionCard>
+              <SectionCard id="s-variants" title="3 · Variants"><VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} footwear={footwear} /></SectionCard>
               <SectionCard id="s-pricing" title="4 · Pricing"><PricingSection form={form} set={set} errors={shownErrors} derived={derived} /></SectionCard>
             </div>
             <div className="xl:sticky xl:top-20">

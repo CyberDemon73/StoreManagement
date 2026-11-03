@@ -5,7 +5,7 @@
  * (POST /brands through the onCreateBrand callback).
  */
 import { useId, useRef, useState, type ReactNode } from 'react';
-import { Check, CircleAlert, ImagePlus, Plus, X } from 'lucide-react';
+import { Check, CircleAlert, ImagePlus, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
 import { formatMoney, formatPct, marginPct } from '@/lib/format';
@@ -18,6 +18,7 @@ import { VariantMatrix } from '@/components/app/VariantMatrix';
 import { BarcodeCaptureButton } from '@/components/app/BarcodeScanner';
 import { hexFromColorName } from '@/lib/color-name';
 import { colorChoices } from '@/lib/colors';
+import { sizeGroups } from '@/lib/sizes';
 import type { Brand, Category, ColorRef, Settings } from '@/types';
 import { type Derived, type FormErrors, type ProductFormState, type SectionCheck, variantSku } from './product-form';
 
@@ -115,15 +116,17 @@ export function ImagesSection({ form, set, tint }: Pick<SectionProps, 'form' | '
 
 /* ---------- 3 · Variants ---------- */
 const CUSTOM_COLOR = '__custom__';
+const CUSTOM_SIZE = '__custom_size__';
+const PRESET_PREFIX = '__preset__:';
 
-export function VariantsSection({ form, set, errors, settings, showBarcodes = false }: SectionProps & { settings: Settings | undefined; showBarcodes?: boolean }) {
+export function VariantsSection({ form, set, errors, settings, showBarcodes = false, footwear = false }: SectionProps & { settings: Settings | undefined; showBarcodes?: boolean; footwear?: boolean }) {
   const presets = settings?.sizePresets ?? [];
-  const [presetName, setPresetName] = useState<string>(() => presets[0]?.name ?? '');
   const [customSize, setCustomSize] = useState<string | null>(null);
   const [colorName, setColorName] = useState('');
   const [colorHex, setColorHex] = useState('#8A5B3C');
-  const preset = presets.find((p) => p.name === presetName) ?? presets[0];
-  const sizeOptions = [...new Set([...(preset?.sizes ?? []), ...form.sizes])];
+  const sizeGroupList = sizeGroups(presets, form.sizes, { footwear });
+  const sizeOptions = sizeGroupList.flatMap((g) => g.sizes);
+  const addCustomSize = () => { const v = (customSize ?? '').trim(); if (v && !form.sizes.some((x) => x.toLowerCase() === v.toLowerCase())) set({ sizes: [...form.sizes, v] }); setCustomSize(null); };
   const colorOptions: ColorRef[] = colorChoices(settings?.colorPresets ?? [], form.colors);
   const sameName = (a: ColorRef, b: ColorRef) => a.name.trim().toLowerCase() === b.name.trim().toLowerCase();
   const isPicked = (c: ColorRef) => form.colors.some((x) => sameName(x, c));
@@ -139,7 +142,7 @@ export function VariantsSection({ form, set, errors, settings, showBarcodes = fa
     setColorName('');
     setShowCustomColor(false);
   };
-  const applyPreset = (name: string) => { setPresetName(name); const p = presets.find((x) => x.name === name); if (p) set({ sizes: [...p.sizes] }); };
+  const applyPreset = (name: string) => { const p = presets.find((x) => x.name === name); if (p) set({ sizes: [...new Set([...form.sizes, ...p.sizes])] }); };
   // keep matrix order stable: sizes in option order, colors in option order
   const orderedSizes = sizeOptions.filter((s) => form.sizes.includes(s));
   const orderedColors = colorOptions.filter(isPicked);
@@ -150,14 +153,38 @@ export function VariantsSection({ form, set, errors, settings, showBarcodes = fa
     <>
       <div className="grid gap-5 md:grid-cols-2">
         <fieldset className="flex min-w-0 flex-col gap-2.5">
-          <legend className="mb-2 text-[13px] font-medium">Sizes{preset ? <span className="text-ink-2"> · preset “{preset.name}”</span> : null}</legend>
-          <div className="flex flex-wrap gap-2">
-            {sizeOptions.map((s) => <Chip key={s} selected={form.sizes.includes(s)} onClick={() => toggleSize(s)}>{s}</Chip>)}
-            {customSize === null ? <Chip onClick={() => setCustomSize('')} leading={<Plus className="size-3.5" aria-hidden />}>Custom</Chip> : (
-              <Input size="sm" autoFocus aria-label="Custom size" value={customSize} wrapperClassName="w-28" placeholder="e.g. 3XL" onChange={(e) => setCustomSize(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const s = customSize.trim(); if (s && !form.sizes.includes(s)) set({ sizes: [...form.sizes, s] }); setCustomSize(null); } if (e.key === 'Escape') setCustomSize(null); }} onBlur={() => { const s = customSize.trim(); if (s && !form.sizes.includes(s)) set({ sizes: [...form.sizes, s] }); setCustomSize(null); }} />
+          <legend className="mb-2 text-[13px] font-medium">Sizes</legend>
+          <Select
+            aria-label="Add a size"
+            value=""
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === CUSTOM_SIZE) { setCustomSize(''); return; }
+              if (v.startsWith(PRESET_PREFIX)) { applyPreset(v.slice(PRESET_PREFIX.length)); return; }
+              if (v) toggleSize(v);
+            }}
+          >
+            <option value="">Add a size…</option>
+            {presets.length > 0 && (
+              <optgroup label="Add a whole run">
+                {presets.map((p) => <option key={p.name} value={PRESET_PREFIX + p.name}>{p.name}: {p.sizes.join(', ')}</option>)}
+              </optgroup>
             )}
-          </div>
-          {presets.length > 0 && <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-2"><span>Presets:</span>{presets.map((p) => <Chip key={p.name} size="sm" selected={p.name === presetName} onClick={() => applyPreset(p.name)}>{p.name}</Chip>)}</div>}
+            {sizeGroupList.map((g) => {
+              const left = g.sizes.filter((x) => !form.sizes.includes(x));
+              return left.length ? <optgroup key={g.name} label={g.name}>{left.map((x) => <option key={x} value={x}>{x}</option>)}</optgroup> : null;
+            })}
+            <option value={CUSTOM_SIZE}>Custom size…</option>
+          </Select>
+          {orderedSizes.length > 0 && (
+            <div className="flex flex-wrap gap-2">{orderedSizes.map((x) => <Chip key={x} selected onRemove={() => toggleSize(x)} aria-label={`Remove size ${x}`}>{x}</Chip>)}</div>
+          )}
+          {customSize !== null && (
+            <div className="flex min-w-0 items-center gap-2">
+              <Input size="sm" autoFocus aria-label="Custom size" value={customSize} wrapperClassName="min-w-0 flex-1" placeholder="e.g. 5XL or 44.5" onChange={(e) => setCustomSize(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomSize(); } if (e.key === 'Escape') setCustomSize(null); }} />
+              <Button size="sm" variant="primary" onClick={addCustomSize} disabled={!customSize.trim()}>Add size</Button>
+            </div>
+          )}
         </fieldset>
         <fieldset className="flex min-w-0 flex-col gap-2.5">
           <legend className="mb-2 text-[13px] font-medium">Colors</legend>
@@ -203,14 +230,14 @@ export function VariantsSection({ form, set, errors, settings, showBarcodes = fa
         ) : <p className="text-xs text-ink-2">Pick at least one size and one color to preview the variants.</p>}
       </div>
       {showBarcodes && orderedSizes.length > 0 && orderedColors.length > 0 && (
-        <fieldset className="flex flex-col gap-2 rounded-card border border-line p-3">
+        <fieldset className="flex min-w-0 flex-col gap-3 rounded-card border border-line p-3">
           <legend className="px-1 text-[13px] font-medium">Barcodes <span className="font-normal text-ink-2">· optional, scan or type</span></legend>
           {orderedSizes.flatMap((s) => orderedColors.map((c) => {
             const key = `${s}|${c.name}`;
             return (
-              <div key={key} className="flex items-center gap-2">
-                <span className="flex w-28 shrink-0 items-center gap-1.5 truncate text-xs"><ColorSwatch hex={c.hex} name={c.name} />{s} · {c.name}</span>
-                <Input size="sm" inputMode="numeric" aria-label={`Barcode for ${s} ${c.name}`} placeholder="Barcode" value={form.barcodes?.[key] ?? ''} onChange={(e) => setBarcode(key, e.target.value)} wrapperClassName="flex-1" className="tabular" />
+              <div key={key} className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="flex basis-full items-center gap-1.5 text-xs"><ColorSwatch hex={c.hex} name={c.name} />{s} · {c.name}</span>
+                <Input size="sm" inputMode="numeric" aria-label={`Barcode for ${s} ${c.name}`} placeholder="Barcode" value={form.barcodes?.[key] ?? ''} onChange={(e) => setBarcode(key, e.target.value)} wrapperClassName="min-w-0 flex-1" className="tabular" />
                 <BarcodeCaptureButton size="sm" label="Scan" aria-label={`Scan barcode for ${s} ${c.name}`} onCode={(code) => setBarcode(key, code)} />
               </div>
             );
