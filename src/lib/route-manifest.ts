@@ -180,6 +180,7 @@ export const ROUTES: RouteSpec[] = [
   { method: 'GET', path: '/variants/lookup', access: 'products.read', load: () => import('@/app/api/v1/variants/lookup/route') },
   { method: 'GET', path: '/variants/search', access: 'products.read', load: () => import('@/app/api/v1/variants/search/route') },
   // --- uploads ---
+  // --- stock ---
   {
     method: 'POST',
     path: '/uploads',
