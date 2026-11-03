@@ -183,3 +183,6 @@ Route POST: `const key = req.headers.get('idempotency-key')` → if present must
 ## Deferred
 - Real concurrent race test (needs Neon/Docker Postgres) — ruling in ledger; sequential lock-order test stands in.
 - Sales/returns references in movement labels (Sprint 3).
+
+## Outcome (2026-11-04)
+All 8 tasks complete on branch `sprint-2` (Tasks 3–7 by three parallel implementers). Final review by three reviewers found one Critical (idempotency race) and six Important findings; all fixed test-first in one pass. Suite 478/478, typecheck/lint/build green, `pnpm audit` 0 high/critical. Migrations 0004 (ledger tables, qty_after) and 0005 (seq, route-scoped idempotency) applied on the owner's Neon project by the frontend session. Deferred items are listed in `docs/plans/ledgers/sprint-2-ledger.md`.
