@@ -24,3 +24,15 @@ describe('toCsv', () => {
     expect(toCsv([])).toBe('');
   });
 });
+
+describe('toCsv hardening (review fixes)', () => {
+  it('neutralises formulas after a semicolon (European/Arabic list separator) and after leading spaces', () => {
+    const csv = toCsv([{ a: 'x;=1+1', b: ' =2+5', c: 'ok; fine' }]);
+    const row = csv.replace(/^\uFEFF/, '').split('\r\n')[1];
+    expect(row).toBe(`"x;'=1+1",' =2+5,"ok; fine"`);
+  });
+
+  it('starts with a UTF-8 BOM when asked so Excel shows Arabic names', () => {
+    expect(toCsv([{ name: 'قميص' }], { bom: true }).startsWith('\uFEFFname')).toBe(true);
+  });
+});

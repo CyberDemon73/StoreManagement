@@ -4,7 +4,7 @@ import { GET as listSales } from '@/app/api/v1/sales/route';
 import { getDb } from '@/db/client';
 import { resolveRange } from '@/analytics/range';
 import { returnLines, saleLines } from '@/analytics/facts';
-import { bumpAnalyticsVersion, memo } from '@/lib/cache';
+import { bumpAnalyticsVersion, memo, setCacheStoreForTests } from '@/lib/cache';
 import { EXPECTED, analyticsFixture } from '../helpers/analytics';
 import { call } from '../helpers/http';
 import { sessionCookieFor } from '../helpers/users';
@@ -68,5 +68,15 @@ describe('cache without Upstash', () => {
     expect(await memo('an:test', fn)).toBe(1);
     expect(await memo('an:test', fn)).toBe(2);
     await expect(bumpAnalyticsVersion()).resolves.toBeUndefined();
+  });
+});
+
+describe('cache key scope', () => {
+  it('prefixes keys with the deployment environment so preview and production never share entries', async () => {
+    const data = new Map<string, unknown>();
+    setCacheStoreForTests({ get: async <T>(k: string) => (data.has(k) ? (data.get(k) as T) : null), set: async (k, v) => { data.set(k, v); }, incr: async () => 1 });
+    await memo('report:x', async () => 1);
+    setCacheStoreForTests(null);
+    expect([...data.keys()].every((k) => k.startsWith('an:test:'))).toBe(true);
   });
 });

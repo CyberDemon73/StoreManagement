@@ -2,7 +2,12 @@ import { Redis } from '@upstash/redis';
 import { getEnv } from './env';
 import { logger } from './logger';
 
-const VERSION_KEY = 'an:version';
+/** Preview and production may share one Upstash database: scope every key by environment. */
+function scope(): string {
+  const env = getEnv();
+  return `an:${env.VERCEL_ENV ?? env.NODE_ENV}:`;
+}
+const versionKey = () => `${scope()}version`;
 const DEFAULT_TTL_SECONDS = 60;
 
 type CacheStore = {
@@ -44,8 +49,8 @@ export async function memo<T>(key: string, fn: () => Promise<T>, ttlSeconds = DE
   if (!s) return fn();
   let fullKey: string | null = null;
   try {
-    const version = (await s.get<number>(VERSION_KEY)) ?? 0;
-    fullKey = `an:v${version}:${key}`;
+    const version = (await s.get<number>(versionKey())) ?? 0;
+    fullKey = `${scope()}v${version}:${key}`;
     const hit = await s.get<T>(fullKey);
     if (hit !== null && hit !== undefined) return hit;
   } catch (err) {
@@ -67,7 +72,7 @@ export async function bumpAnalyticsVersion(): Promise<void> {
   const s = store();
   if (!s) return;
   try {
-    await s.incr(VERSION_KEY);
+    await s.incr(versionKey());
   } catch (err) {
     logger.warn({ err: { message: (err as Error).message } }, 'analytics cache bump failed');
   }

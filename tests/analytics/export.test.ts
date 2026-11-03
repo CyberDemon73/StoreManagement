@@ -35,7 +35,10 @@ describe('GET /analytics/export', () => {
     expect(res.status).toBe(200);
     expect(res.headers.get('content-type')).toContain('text/csv');
     expect(res.headers.get('content-disposition')).toContain('payment-mix.csv');
-    const lines = (await res.text()).trim().split('\r\n');
+    // Response.text() strips a UTF-8 BOM while decoding, so check the raw bytes.
+    const bytes = new Uint8Array(await res.arrayBuffer());
+    expect([...bytes.slice(0, 3)]).toEqual([0xef, 0xbb, 0xbf]);
+    const lines = new TextDecoder().decode(bytes).trim().split('\r\n');
     expect(lines[0]).toBe('method,count,total');
     expect(lines.slice(1)).toEqual(['CASH,2,2500', 'CARD,1,2333', 'WALLET,0,0', 'TRANSFER,0,0']);
   });
@@ -85,10 +88,10 @@ describe('report caching', () => {
     const cookie = await sessionCookieFor(db, fx.manager.id);
     const path = `/api/v1/analytics/payment-mix?from=${EXPECTED.range.from}&to=${EXPECTED.range.to}`;
     expect((await call(paymentMixRoute, { path, cookie })).status).toBe(200);
-    const versionBefore = (store.data.get('an:version') as number | undefined) ?? 0;
+    const versionBefore = (store.data.get('an:test:version') as number | undefined) ?? 0;
     const { POST: park } = await import('@/app/api/v1/sales/parked/route');
     const res = await call(park, { method: 'POST', path: '/api/v1/sales/parked', cookie, body: { label: 'x', cart: { lines: [], discount: { type: 'AMOUNT', value: 0 }, paymentMethod: 'CASH' } } });
     expect(res.status).toBe(201);
-    expect(store.data.get('an:version')).toBe(versionBefore + 1);
+    expect(store.data.get('an:test:version')).toBe(versionBefore + 1);
   });
 });

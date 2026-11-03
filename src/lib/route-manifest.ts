@@ -181,7 +181,7 @@ export const ROUTES: RouteSpec[] = [
   { method: 'GET', path: '/variants/search', access: 'products.read', load: () => import('@/app/api/v1/variants/search/route') },
   // --- uploads ---
   // --- analytics ---
-  { method: 'GET', path: '/analytics/export', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/export/route') },
+  { method: 'GET', path: '/analytics/export', access: 'export.csv', load: () => import('@/app/api/v1/analytics/export/route') },
   { method: 'GET', path: '/analytics/dashboard', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/dashboard/route') },
   { method: 'GET', path: '/analytics/sales-trend', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/sales-trend/route') },
   { method: 'GET', path: '/analytics/payment-mix', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/payment-mix/route') },
