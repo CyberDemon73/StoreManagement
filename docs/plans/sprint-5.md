@@ -31,8 +31,8 @@
 ### Task 1: Schema 0008 + forced password change + user shape
 
 **Files:** `src/db/schema/auth.ts` (status enum + INVITED; `knownDevices` table: userId fk cascade, deviceHash text, createdAt, pk(userId, deviceHash)), `src/db/schema/system.ts` (settings + `dateFormat text default 'DD/MM/YYYY'`, `requirePhoneOnTransfer bool default false`, `receiptShowLogo bool default true`, `largeRefundAlert int default 100000`; `notificationKindEnum('notification_kind', ['LOW_STOCK','LARGE_REFUND','NEW_DEVICE_LOGIN','COUNT_APPLIED'])`; `notifications`: id, userId fk cascade not null, kind, title, body, href, actionLabel, dedupeKey text null, payload jsonb, readAt, createdAt; index (userId, readAt, createdAt desc), unique (userId, dedupeKey) where readAt is null — partial unique index), migration 0008 (enum value add via `ALTER TYPE … ADD VALUE` — drizzle emits it; verify not inside a transaction issue on PGlite), `src/serializers/user.ts` (`roles: [role]`, `lastDevice?`, `sessions` count when provided), `src/lib/auth.ts` (forced-change rule), `tests/helpers/db.ts` TABLES.
-- [ ] Tests: schema (tables empty; INVITED insertable; notifications partial unique: two unread with same dedupeKey → 23505, after read_at set a new one allowed); forced change: user with mustChangePassword → `GET /stock/low` 403 with `fields.password`, `GET /auth/me` 200, `POST /auth/logout` 204; `toPublicUser` has `roles: ['SELLER']`.
-- [ ] RED → GREEN → commit `chore(db): invites, notifications, known devices, settings fields (0008); forced password change`
+- [x] Tests: schema (tables empty; INVITED insertable; notifications partial unique: two unread with same dedupeKey → 23505, after read_at set a new one allowed); forced change: user with mustChangePassword → `GET /stock/low` 403 with `fields.password`, `GET /auth/me` 200, `POST /auth/logout` 204; `toPublicUser` has `roles: ['SELLER']`.
+- [x] RED → GREEN → commit `chore(db): invites, notifications, known devices, settings fields (0008); forced password change`
 
 ### Task 2: Users admin + invites (agent)
 

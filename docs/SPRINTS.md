@@ -98,14 +98,14 @@ Each sprint: ~1 Claude Code session of focused work. Run `/sprint N` (skill incl
 ## Sprint 5 — Users, settings, audit, notifications
 **Goal:** overall management.
 
-- [ ] `GET/POST /users`, `PATCH /users/:id` (role, name), `POST /users/:id/disable|enable`, `POST /users/:id/reset-password` (sets must-change flag or emails link), `POST /users/:id/revoke-sessions`.
-- [ ] Prevent disabling the last ADMIN; prevent self-demotion of last admin.
-- [ ] Invite flow email (Resend) with 48-h token.
-- [ ] `GET/PATCH /settings` (validated; size & color presets; seller discount cap; low stock default; prefixes).
-- [ ] `GET /audit` searchable + paginated.
-- [ ] Notifications table + `GET /notifications`, `POST /notifications/:id/read`; producers: low stock on sale/adjust, refund > threshold, login from new device (UA/IP hash).
-- [ ] Profile: `PATCH /me`, `POST /me/password`.
-- [ ] Tests: last-admin guard, settings validation, notification producers.
+- [x] `GET/POST /users`, `PATCH /users/:id` (role, name), `POST /users/:id/disable|enable`, `POST /users/:id/reset-password` (sets must-change flag or emails link), `POST /users/:id/revoke-sessions`.
+- [x] Prevent disabling the last ADMIN; prevent self-demotion of last admin.
+- [x] Invite flow email (Resend) with 48-h token.
+- [x] `GET/PATCH /settings` (validated; size & color presets; seller discount cap; low stock default; prefixes).
+- [x] `GET /audit` searchable + paginated.
+- [x] Notifications table + `GET /notifications`, `POST /notifications/:id/read`; producers: low stock on sale/adjust, refund > threshold, login from new device (UA/IP hash).
+- [x] Profile: `PATCH /me`, `POST /me/password`.
+- [x] Tests: last-admin guard, settings validation, notification producers.
 
 ---
 
