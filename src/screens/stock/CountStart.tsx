@@ -4,6 +4,7 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useApi, useMutation } from '@/lib/use-api';
+import { listAllPages } from '@/lib/paging';
 import { formatDateTime } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { Card, CardHeader } from '@/components/ui/Card';
@@ -25,7 +26,7 @@ export function CountStart({ recent, canManage, onStarted }: { recent: StockCoun
   const brands = useApi(() => api.catalog.brands(), []);
   const categories = useApi(() => api.catalog.categories(), []);
   const scoped = !!(brandId || categoryId);
-  const products = useApi(() => api.products.list({ brandId: brandId || undefined, categoryId: categoryId || undefined, pageSize: 200 }), [brandId, categoryId], { enabled: scoped });
+  const products = useApi(() => listAllPages((page, pageSize) => api.products.list({ brandId: brandId || undefined, categoryId: categoryId || undefined, page, pageSize })), [brandId, categoryId], { enabled: scoped });
   const productIds = scoped ? products.data?.data.map((p) => p.id) : undefined;
   const variantCount = products.data?.data.reduce((a, p) => a + p.variantCount, 0);
 

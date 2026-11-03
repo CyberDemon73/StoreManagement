@@ -10,6 +10,7 @@ import { useRouter } from 'next/navigation';
 import { Bookmark, Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/use-api';
+import { listAllPages } from '@/lib/paging';
 import { useAuth } from '@/lib/auth-context';
 import { dateRangeFor, formatMoney, formatNumber, formatTime, PAYMENT_LABEL, stockStatus } from '@/lib/format';
 import { Page, PageHeader } from '@/components/app/PageHeader';
@@ -33,7 +34,7 @@ export function SellerHomeScreen() {
   const { toast } = useToast();
   const { actions } = useCart();
   const today = dateRangeFor('today');
-  const sales = useApi(() => api.sales.list({ from: today.from, to: today.to, pageSize: 200 }), [today.from]);
+  const sales = useApi(() => listAllPages((page, pageSize) => api.sales.list({ from: today.from, to: today.to, page, pageSize })), [today.from]);
   const low = useApi(() => api.stock.low(), []);
   const parked = useApi(() => api.sales.parked(), []);
 

@@ -9,6 +9,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { Printer, Receipt as ReceiptIcon } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useApi } from '@/lib/use-api';
+import { listAllPages } from '@/lib/paging';
 import { dateRangeFor, formatDateTime, formatMoney, formatNumber, formatTime, PAYMENT_LABEL } from '@/lib/format';
 import { Page, PageHeader } from '@/components/app/PageHeader';
 import { Receipt } from '@/components/app/Receipt';
@@ -26,7 +27,7 @@ const PRESETS: { value: Preset; label: string }[] = [{ value: 'today', label: 'T
 export function MySalesScreen() {
   const [preset, setPreset] = useState<Preset>('today');
   const range = useMemo(() => dateRangeFor(preset), [preset]);
-  const sales = useApi(() => api.sales.list({ from: range.from, to: range.to, pageSize: 200 }), [range.from, range.to]);
+  const sales = useApi(() => listAllPages((page, pageSize) => api.sales.list({ from: range.from, to: range.to, page, pageSize })), [range.from, range.to]);
   const settings = useApi(() => api.settings.get(), []);
   const params = useSearchParams();
   const router = useRouter();
