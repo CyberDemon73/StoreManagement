@@ -181,6 +181,20 @@ export const ROUTES: RouteSpec[] = [
   { method: 'GET', path: '/variants/search', access: 'products.read', load: () => import('@/app/api/v1/variants/search/route') },
   // --- uploads ---
   // --- analytics ---
+  { method: 'GET', path: '/analytics/export', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/export/route') },
+  { method: 'GET', path: '/analytics/dashboard', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/dashboard/route') },
+  { method: 'GET', path: '/analytics/sales-trend', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/sales-trend/route') },
+  { method: 'GET', path: '/analytics/payment-mix', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/payment-mix/route') },
+  { method: 'GET', path: '/analytics/brands', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/brands/route') },
+  { method: 'GET', path: '/analytics/categories', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/categories/route') },
+  { method: 'GET', path: '/analytics/top-products', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/top-products/route') },
+  { method: 'GET', path: '/analytics/top-variants', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/top-variants/route') },
+  { method: 'GET', path: '/analytics/size-color', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/size-color/route') },
+  { method: 'GET', path: '/analytics/slow-movers', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/slow-movers/route') },
+  { method: 'GET', path: '/analytics/stock-ageing', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/stock-ageing/route') },
+  { method: 'GET', path: '/analytics/sellers', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/sellers/route') },
+  { method: 'GET', path: '/analytics/returns', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/returns/route') },
+  { method: 'GET', path: '/analytics/price-list', access: 'analytics.read', load: () => import('@/app/api/v1/analytics/price-list/route') },
   // --- sales ---
   {
     method: 'POST',
