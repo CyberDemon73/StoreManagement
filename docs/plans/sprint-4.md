@@ -122,3 +122,6 @@ Expected for range 06-10..06-11: revenue = 2000 + 2800 + 500 − 467 = 4833; cog
 
 ## Deferred
 - `EXPLAIN ANALYZE` on 10k sales (`scripts/seed-big.ts`) → Sprint 6 performance task.
+
+## Outcome (2026-11-05)
+All 6 tasks complete on branch `sprint-4` (Tasks 2–4 by three parallel implementers on Opus after the Fable dispatch hit a credit limit). Final review by two reviewers: no Critical; reconciliation, NULL-revenue, cache-exposure and overflow findings fixed test-first in one pass. Every report now reconciles with KPI revenue on adversarial data (partial returns across days, 100 % discounts, zero-subtotal sales, deleted sellers, retired brands, DST change). Deferred items in `docs/plans/ledgers/sprint-4-ledger.md`.

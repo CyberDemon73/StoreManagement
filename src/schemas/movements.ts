@@ -12,7 +12,7 @@ const isoDate = z
 
 export const movementTypes = ['INITIAL', 'PURCHASE', 'SALE', 'RETURN', 'ADJUSTMENT'] as const;
 
-/** `from`/`to` are UTC calendar days: `from 00:00Z <= created_at < to + 1 day 00:00Z`. */
+/** `from`/`to` are calendar days in the store timezone: `from 00:00Z <= created_at < to + 1 day 00:00Z`. */
 export const movementsQuery = paginationQuery
   .extend({
     variantId: uuidSchema.optional(),
