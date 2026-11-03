@@ -1,13 +1,13 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Db } from '@/db/client';
-import { returnItems, returns, saleItems, sales } from '@/db/schema';
+import { products, returnItems, returns, saleItems, sales, variants } from '@/db/schema';
 import { audit } from '@/lib/audit';
 import type { AuthUser, ReqCtx } from '@/lib/auth';
 import { AppError } from '@/lib/errors';
 import type { ReturnInput } from '@/schemas/sales';
 import { toReturn, type SaleOut } from '@/serializers/sales';
 import { actorOf } from './products';
-import { lineRefund } from './sale-math';
+import { cumulativeRefund } from './sale-math';
 import { lockSale } from './sale-void';
 import { loadSale } from './sales';
 import { applyMovement, lockVariants } from './stock';
@@ -43,11 +43,31 @@ export async function createReturn(db: Db, user: AuthUser, saleId: string, input
     });
     if (Object.keys(fields).length > 0) throw new AppError('VALIDATION', 'Some lines cannot be returned', { fields });
 
-    let refundAmount = 0;
-    for (const [saleItemId, qty] of perItem) {
-      const item = byId.get(saleItemId)!;
-      refundAmount += lineRefund(item.unitPrice, qty, sale.subtotal, sale.total);
-    }
+    // Sale-level cumulative refund: rounding never accumulates, so refunds never exceed what was paid.
+    const [prior] = await tx
+      .select({ sum: sql<number>`coalesce(sum(${returns.refundAmount}), 0)::int` })
+      .from(returns)
+      .where(eq(returns.saleId, saleId));
+    const returnedValueAfter = items.reduce((s, i) => s + i.unitPrice * (i.returnedQty + (perItem.get(i.id) ?? 0)), 0);
+    const refundAmount = cumulativeRefund({ subtotal: sale.subtotal, total: sale.total, returnedValueAfter, alreadyRefunded: Number(prior?.sum ?? 0) });
+
+    // A variant retired after the sale (inactive or archived product) is refunded but not put back on
+    // the shelf: same policy as stock count apply. The return line records restock = false.
+    const restockIds = [...new Set(input.items.filter((l) => l.restock).map((l) => byId.get(l.saleItemId)!.variantId))];
+    const sellable =
+      restockIds.length === 0
+        ? new Set<string>()
+        : new Set(
+            (
+              await tx
+                .select({ id: variants.id })
+                .from(variants)
+                .innerJoin(products, eq(products.id, variants.productId))
+                .where(and(inArray(variants.id, restockIds), eq(variants.isActive, true), eq(products.status, 'ACTIVE')))
+            ).map((v) => v.id),
+          );
+    const skippedRestock = restockIds.filter((id) => !sellable.has(id));
+    const lines = input.items.map((l) => ({ ...l, restock: l.restock && sellable.has(byId.get(l.saleItemId)!.variantId) }));
 
     const [ret] = await tx
       .insert(returns)
@@ -56,7 +76,7 @@ export async function createReturn(db: Db, user: AuthUser, saleId: string, input
     if (!ret) throw new Error('return insert returned no row');
     const retItems = await tx
       .insert(returnItems)
-      .values(input.items.map((l) => ({ returnId: ret.id, saleItemId: l.saleItemId, qty: l.qty, restock: l.restock })))
+      .values(lines.map((l) => ({ returnId: ret.id, saleItemId: l.saleItemId, qty: l.qty, restock: l.restock })))
       .returning();
 
     for (const [saleItemId, qty] of perItem) {
@@ -68,7 +88,7 @@ export async function createReturn(db: Db, user: AuthUser, saleId: string, input
 
     // Restock per variant (aggregated) so the ledger has one row per variant per return.
     const restock = new Map<string, { qty: number; unitCost: number | null }>();
-    for (const l of input.items) {
+    for (const l of lines) {
       if (!l.restock) continue;
       const item = byId.get(l.saleItemId)!;
       const cur = restock.get(item.variantId);
@@ -95,7 +115,7 @@ export async function createReturn(db: Db, user: AuthUser, saleId: string, input
       .set({ status: fullyReturned ? 'REFUNDED' : 'PARTIALLY_REFUNDED' })
       .where(eq(sales.id, saleId));
 
-    await audit(tx, actorOf(user, ctx), 'return.create', 'return', ret.id, null, toReturn(ret, retItems));
+    await audit(tx, actorOf(user, ctx), 'return.create', 'return', ret.id, null, { ...toReturn(ret, retItems), skippedRestock });
   });
 
   const out = await loadSale(db, saleId);

@@ -8,6 +8,9 @@ export const FORBIDDEN_SELLER_KEYS = [
   'profit',
   'stockValueCost',
   'cogs',
+  'cost',
+  'grossProfit',
+  'valueAtCost',
 ] as const;
 
 const FORBIDDEN = new Set<string>(FORBIDDEN_SELLER_KEYS);

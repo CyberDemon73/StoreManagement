@@ -20,7 +20,8 @@ export const discountBody = z
     value: z.number().min(0).max(INT4_MAX),
   })
   .strict()
-  .refine((d) => d.type !== 'PCT' || (d.value <= 100 && Math.round(d.value * 100) === d.value * 100), {
+  // Tolerance: 5.1 * 100 is 509.99999999999994 in floating point.
+  .refine((d) => d.type !== 'PCT' || (d.value <= 100 && Math.abs(d.value * 100 - Math.round(d.value * 100)) < 1e-6), {
     message: 'Percentage must be 0–100 with at most 2 decimals',
     path: ['value'],
   })

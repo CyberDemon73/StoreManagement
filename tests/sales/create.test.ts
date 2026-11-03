@@ -39,6 +39,9 @@ describe('POST /sales', () => {
     expect(lineA).toMatchObject({ variantId: a.id, productName: 'Chino Slim', sku: 'NO-CHI-S-BLACK', qty: 2, unitPrice: 1000, lineTotal: 2000, returnedQty: 0 });
     expect(lineA.tint).toBe('#000000');
     expectNoSellerKeys(body);
+    // Explicit, independent of the shared key list: sellers never see basket cost or profit.
+    expect(body.cost).toBeUndefined();
+    expect(body.profit).toBeUndefined();
     expect(await qty(a.id)).toBe(8);
     expect(await qty(b.id)).toBe(4);
     const moves = await db.select().from(stockMovements).where(eq(stockMovements.type, 'SALE'));
@@ -126,5 +129,14 @@ describe('POST /sales', () => {
   it('requires a session and the sales.create permission', async () => {
     const { a } = await setup();
     expect((await call(POST, { method: 'POST', path: '/api/v1/sales', body: { items: [{ variantId: a.id, qty: 1 }], paymentMethod: 'CASH' } })).status).toBe(401);
+  });
+});
+
+describe('range checks (review fix)', () => {
+  it('rejects totals beyond the int4 range with 400 instead of a database 500', async () => {
+    const { a, managerCookie } = await setup();
+    const res = await post(managerCookie, { items: [{ variantId: a.id, qty: 2, unitPrice: 2147483647 }], paymentMethod: 'CASH' });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields.items).toBeTypeOf('string');
   });
 });

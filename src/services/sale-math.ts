@@ -39,3 +39,15 @@ export function lineRefund(unitPrice: number, qty: number, subtotal: number, tot
   if (subtotal <= 0) return 0;
   return Math.round((unitPrice * qty * total) / subtotal);
 }
+
+/**
+ * Refund for a return, computed cumulatively at sale level: the value returned so far (list price ×
+ * returned qty, including this return) is converted to its share of what was paid, minus what was
+ * already refunded. Rounding never accumulates, so Σ refunds ≤ total and a full return refunds
+ * exactly total.
+ */
+export function cumulativeRefund(input: { subtotal: number; total: number; returnedValueAfter: number; alreadyRefunded: number }): number {
+  if (input.subtotal <= 0) return 0;
+  const paidShare = Math.round((input.returnedValueAfter * input.total) / input.subtotal);
+  return Math.max(0, Math.min(paidShare, input.total) - input.alreadyRefunded);
+}

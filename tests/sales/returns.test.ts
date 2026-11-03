@@ -1,5 +1,6 @@
 import { and, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { GET as GET_ONE } from '@/app/api/v1/sales/[id]/route';
 import { POST } from '@/app/api/v1/sales/[id]/returns/route';
 import { getDb } from '@/db/client';
 import { auditLog, returnItems, returns, saleItems, settings, stockMovements, variants } from '@/db/schema';
@@ -119,8 +120,8 @@ describe('POST /sales/:id/returns', () => {
     const mgr = await post(managerCookie, sale.id, body([{ saleItemId: itemA.id, qty: 1, restock: true }]));
     expect(mgr.status).toBe(201);
     const out = await mgr.json();
-    // Manager view keeps cost; profit drops by the refund: 3000 - 1000 - 1500.
-    expect(out).toMatchObject({ cost: 1500, profit: 500 });
+    // DATA-MODEL derived rule: the restocked unit's cost goes back to stock. cost 1500 - 500 = 1000; profit 3000 - 1000 refunded - 1000 = 1000.
+    expect(out).toMatchObject({ cost: 1000, profit: 1000 });
     expect(out.items.find((i: { id: string }) => i.id === itemA.id).unitCost).toBe(500);
     expect((await post(managerCookie, '00000000-0000-4000-8000-000000000001', body([{ saleItemId: itemA.id, qty: 1, restock: true }]))).status).toBe(404);
   });
@@ -146,7 +147,32 @@ describe('POST /sales/:id/returns', () => {
     expect(res.status).toBe(201);
     const out = await res.json();
     expect(out.returns[0]).toMatchObject({ refundAmount: 900, refundMethod: 'CARD', note: 'card refund' });
-    expect(out).toMatchObject({ status: 'REFUNDED', profit: 900 - 900 - 500 });
+    // Fully refunded and restocked: nothing sold, no profit or loss.
+    expect(out).toMatchObject({ status: 'REFUNDED', cost: 0, profit: 0 });
+  });
+
+  it('never refunds more than was paid across several partial returns (rounding)', async () => {
+    const { db, manager, managerCookie, variants: [a, b] } = await setup();
+    const s = await createSale(db, authUserOf(manager), { items: [{ variantId: a.id, qty: 1, unitPrice: 333 }, { variantId: a.id, qty: 1, unitPrice: 333 }, { variantId: b.id, qty: 1, unitPrice: 334 }], discount: { type: 'PCT', value: 10 }, paymentMethod: 'CASH' }, CTX);
+    expect(s.total).toBe(900);
+    let refunded = 0;
+    let last: { status: string } = { status: '' };
+    for (const item of s.items) {
+      const res = await post(managerCookie, s.id, body([{ saleItemId: item.id, qty: 1, restock: false }]));
+      expect(res.status).toBe(201);
+      last = await res.json();
+      refunded = (last as unknown as { returns: { refundAmount: number }[] }).returns.reduce((t, x) => t + x.refundAmount, 0);
+    }
+    expect(last.status).toBe('REFUNDED');
+    expect(refunded).toBe(900);
+  });
+
+  it('shows zero cost and profit on a VOID sale', async () => {
+    const { db, manager, managerCookie, variants: [a] } = await setup();
+    const s = await createSale(db, authUserOf(manager), { items: [{ variantId: a.id, qty: 1 }], paymentMethod: 'CASH' }, CTX);
+    await voidSale(db, authUserOf(manager), s.id, { reason: 'test' }, CTX);
+    const res = await call(GET_ONE, { path: '/api/v1/sales/' + s.id, cookie: managerCookie, params: { id: s.id } });
+    expect(await res.json()).toMatchObject({ status: 'VOID', cost: 0, profit: 0 });
   });
 
   it('validates the body', async () => {
@@ -155,5 +181,33 @@ describe('POST /sales/:id/returns', () => {
     expect((await post(sellerCookie, sale.id, body([{ saleItemId: itemA.id, qty: 0, restock: true }]))).status).toBe(400);
     expect((await post(sellerCookie, sale.id, body([{ saleItemId: itemA.id, qty: 1, restock: true }], { reason: '' }))).status).toBe(400);
     expect((await post(sellerCookie, sale.id, body([{ saleItemId: itemA.id, qty: 1, restock: true }], { extra: 1 }))).status).toBe(400);
+  });
+});
+
+describe('returns hardening (review fixes)', () => {
+  it('replays a retried return with the same Idempotency-Key instead of refunding twice', async () => {
+    const { db, sale, itemA, sellerCookie } = await setup();
+    const key = '33333333-2222-4333-8444-555555555555';
+    const send = () => call(POST, { method: 'POST', path: `/api/v1/sales/${sale.id}/returns`, cookie: sellerCookie, body: body([{ saleItemId: itemA.id, qty: 1, restock: true }]), params: { id: sale.id }, headers: { 'idempotency-key': key } });
+    const first = await send();
+    expect(first.status).toBe(201);
+    const second = await send();
+    expect(second.status).toBe(201);
+    expect(second.headers.get('Idempotent-Replayed')).toBe('true');
+    expect(await db.select().from(returns)).toHaveLength(1);
+    const bad = await call(POST, { method: 'POST', path: `/api/v1/sales/${sale.id}/returns`, cookie: sellerCookie, body: body([{ saleItemId: itemA.id, qty: 1, restock: true }]), params: { id: sale.id }, headers: { 'idempotency-key': 'nope' } });
+    expect(bad.status).toBe(400);
+  });
+
+  it('refunds but does not restock a variant retired after the sale, and says so in the audit', async () => {
+    const { db, sale, itemA, managerCookie, variants: [a] } = await setup();
+    await db.update(variants).set({ isActive: false }).where(eq(variants.id, a.id));
+    const res = await post(managerCookie, sale.id, body([{ saleItemId: itemA.id, qty: 1, restock: true }]));
+    expect(res.status).toBe(201);
+    const out = await res.json();
+    expect(out.returns[0].items[0].restock).toBe(false);
+    expect(await qty(a.id)).toBe(8);
+    const rows = await db.select().from(auditLog).where(eq(auditLog.action, 'return.create'));
+    expect((rows[0]?.after as { skippedRestock?: string[] }).skippedRestock).toEqual([a.id]);
   });
 });

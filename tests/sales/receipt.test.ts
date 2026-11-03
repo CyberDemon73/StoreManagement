@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { GET } from '@/app/api/v1/sales/[id]/receipt/route';
 import { getDb } from '@/db/client';
+import { settings } from '@/db/schema';
 import { createSale } from '@/services/sales';
 import { expectNoSellerKeys } from '../helpers/catalog';
 import { call } from '../helpers/http';
@@ -79,5 +80,22 @@ describe('GET /sales/:id/receipt', () => {
     expect((await receipt(managerCookie, sale.id, '?format=pdf')).status).toBe(400);
     expect((await receipt(managerCookie, sale.id, '?foo=1')).status).toBe(400);
     expect((await call(GET, { path: `/api/v1/sales/${sale.id}/receipt`, params: { id: sale.id } })).status).toBe(401);
+  });
+});
+
+describe('receipt presentation (review fixes)', () => {
+  it('prints the date in the store timezone, not raw UTC ISO', async () => {
+    const { sale, sellerCookie } = await setup();
+    const html = await (await receipt(sellerCookie, sale.id, '?format=html')).text();
+    expect(html).not.toContain(sale.createdAt);
+    const expected = new Intl.DateTimeFormat('en-GB', { timeZone: 'Africa/Cairo', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(sale.createdAt));
+    expect(html).toContain(expected);
+  });
+
+  it('embeds only https logos', async () => {
+    const { db, sale, sellerCookie } = await setup();
+    await db.update(settings).set({ logoUrl: 'http://insecure.example/logo.png' });
+    const html = await (await receipt(sellerCookie, sale.id, '?format=html')).text();
+    expect(html).not.toContain('insecure.example');
   });
 });

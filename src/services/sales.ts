@@ -5,6 +5,7 @@ import { audit } from '@/lib/audit';
 import type { AuthUser, ReqCtx } from '@/lib/auth';
 import { AppError } from '@/lib/errors';
 import { can } from '@/lib/permissions';
+import { INT4_MAX } from '@/schemas/products';
 import type { SaleCreateInput, SalesQuery } from '@/schemas/sales';
 import { toReturn, toSale, toSaleItem, type SaleOut } from '@/serializers/sales';
 import type { Paginated } from './audit';
@@ -137,6 +138,10 @@ export async function createSale(db: Db, user: AuthUser, input: SaleCreateInput,
       return { variantId: i.variantId, qty: i.qty, unitPrice: i.unitPrice ?? v.sellPrice, unitCost: v.costPrice };
     });
     const totals = computeTotals({ lines, discount: input.discount });
+    // Money columns are int4: refuse out-of-range baskets up front instead of failing in the INSERT.
+    if (totals.subtotal > INT4_MAX || lines.some((l) => l.unitPrice * l.qty > INT4_MAX)) {
+      throw new AppError('VALIDATION', 'Sale total is out of range', { fields: { items: 'Total exceeds the supported range' } });
+    }
     if (!can(user, 'sales.discount.unlimited') && sellerCapExceeded(totals, Number(settings.sellerDiscountCapPct))) {
       throw new AppError('VALIDATION', 'Discount exceeds your allowed cap', {
         fields: { discount: `Sellers may discount at most ${Number(settings.sellerDiscountCapPct)} %` },

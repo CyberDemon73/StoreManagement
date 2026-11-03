@@ -13,6 +13,8 @@ export interface ReceiptStore {
   currency: string;
   receiptHeader: string | null;
   receiptFooter: string | null;
+  /** IANA zone from settings; receipts print local time. */
+  timezone: string;
 }
 
 export interface ReceiptData {
@@ -35,6 +37,7 @@ export async function receiptJson(db: Db, user: AuthUser, id: string): Promise<R
       currency: s.currency,
       receiptHeader: s.receiptHeader,
       receiptFooter: s.receiptFooter,
+      timezone: s.timezone,
     },
   };
 }
@@ -48,7 +51,16 @@ export function escapeHtml(value: string | number | null | undefined): string {
 // Only http(s) logos are embedded; anything else (javascript:, data:) is dropped.
 function safeUrl(url: string | null): string | null {
   if (!url) return null;
-  return /^https?:\/\//i.test(url) ? url : null;
+  // https only: http logos are mixed content on the deployed site.
+  return /^https:\/\//i.test(url) ? url : null;
+}
+
+function localDate(iso: string, timeZone: string): string {
+  try {
+    return new Intl.DateTimeFormat('en-GB', { timeZone, dateStyle: 'medium', timeStyle: 'short' }).format(new Date(iso));
+  } catch {
+    return iso;
+  }
 }
 
 /** Self-contained printable receipt: inline CSS, no scripts, everything escaped. */
@@ -108,7 +120,7 @@ ${header}
 ${voidBanner}
 <div class="meta">
   <div>Receipt <strong>${escapeHtml(sale.number)}</strong></div>
-  <div>Date: ${escapeHtml(sale.createdAt)}</div>
+  <div>Date: ${escapeHtml(localDate(sale.createdAt, store.timezone))}</div>
   <div>Served by: ${escapeHtml(sale.sellerName)}</div>
   ${customer}
 </div>

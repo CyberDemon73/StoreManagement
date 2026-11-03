@@ -111,8 +111,12 @@ export function toReturn(row: ReturnRow, items: ReturnItemRow[]): ReturnOut {
 
 /** Full sale. `cost`/`profit` are included (manager fields) and stripped for sellers by forRole. */
 export function toSale(row: SaleRow, sellerName: string | null, items: SaleItemOut[], returnsOut: ReturnOut[]): SaleOut {
+  // DATA-MODEL derived rule: restocked units return their cost to stock, so they are not cost of goods sold.
+  const restocked = new Map<string, number>();
+  for (const r of returnsOut) for (const ri of r.items) if (ri.restock) restocked.set(ri.saleItemId, (restocked.get(ri.saleItemId) ?? 0) + ri.qty);
   const costKnown = items.every((i) => typeof i.unitCost === 'number');
-  const cost = costKnown ? items.reduce((s, i) => s + (i.unitCost ?? 0) * i.qty, 0) : undefined;
+  const isVoid = row.status === 'VOID';
+  const cost = !costKnown ? undefined : isVoid ? 0 : items.reduce((s, i) => s + (i.unitCost ?? 0) * (i.qty - (restocked.get(i.id) ?? 0)), 0);
   const refunded = returnsOut.reduce((s, r) => s + r.refundAmount, 0);
   return omitNullish({
     id: row.id,
@@ -130,7 +134,7 @@ export function toSale(row: SaleRow, sellerName: string | null, items: SaleItemO
     customerPhone: row.customerPhone,
     note: row.note,
     cost,
-    profit: cost === undefined ? undefined : row.total - refunded - cost,
+    profit: cost === undefined ? undefined : isVoid ? 0 : row.total - refunded - cost,
     returns: returnsOut,
     voidReason: row.voidReason,
     createdAt: row.createdAt.toISOString(),
