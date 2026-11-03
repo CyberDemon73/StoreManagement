@@ -45,6 +45,9 @@ export function getEnv(): Env {
   if (cached) return cached;
   const raw: Record<string, string | undefined> = {};
   for (const [k, v] of Object.entries(process.env)) raw[k] = v === '' ? undefined : v;
+  // The Vercel Marketplace Upstash integration injects KV_REST_API_*; accept those names too.
+  raw.UPSTASH_REDIS_REST_URL ??= raw.KV_REST_API_URL;
+  raw.UPSTASH_REDIS_REST_TOKEN ??= raw.KV_REST_API_TOKEN;
   cached = envSchema.parse(raw);
   return cached;
 }
