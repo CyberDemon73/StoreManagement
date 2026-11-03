@@ -42,6 +42,8 @@ describe('POST /auth/forgot', () => {
     expect(sent).toHaveLength(1);
     expect(sent[0]?.to).toBe(u.email);
     expect(sent[0]?.text).toContain('http://localhost:3000/reset?token=');
+    expect(sent[0]?.html).toContain('Choose a new password');
+    expect(sent[0]?.html).toContain('href="http://localhost:3000/reset?token=');
     const rows = await getDb().select().from(passwordResetTokens);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.purpose).toBe('RESET');

@@ -6,6 +6,8 @@ export interface OutgoingEmail {
   to: string;
   subject: string;
   text: string;
+  /** Optional HTML body; `text` is always sent as the plain-text alternative. */
+  html?: string;
 }
 
 type Transport = (mail: OutgoingEmail) => Promise<void>;
@@ -27,7 +29,7 @@ export async function sendEmail(mail: OutgoingEmail): Promise<void> {
     return;
   }
   resend ??= new Resend(RESEND_API_KEY);
-  const { error } = await resend.emails.send({ from: EMAIL_FROM, to: mail.to, subject: mail.subject, text: mail.text });
+  const { error } = await resend.emails.send({ from: EMAIL_FROM, to: mail.to, subject: mail.subject, text: mail.text, ...(mail.html ? { html: mail.html } : {}) });
   if (error) {
     logger.error({ subject: mail.subject, error: error.message }, 'email send failed');
     throw new Error('email send failed');

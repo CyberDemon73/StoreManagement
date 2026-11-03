@@ -15,6 +15,7 @@ import {
   type ReqCtx,
 } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
+import { resetLinkEmail } from '@/lib/email-templates';
 import { getEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
 import { describeError } from '@/lib/http';
@@ -139,11 +140,7 @@ export async function forgot(db: Db, input: ForgotInput, ctx: ReqCtx): Promise<v
   // whether the address exists; the client always gets 204.
   deferred(async () => {
     try {
-      await sendEmail({
-        to: user.email,
-        subject: 'Reset your Avenue Brand password',
-        text: `Hello ${user.name},\n\nUse this link within 30 minutes to choose a new password:\n${link}\n\nIf you did not ask for this, ignore this email.`,
-      });
+      await sendEmail({ to: user.email, ...resetLinkEmail({ name: user.name, link }) });
     } catch (err) {
       logger.error({ err: describeError(err), userId: user.id }, 'password reset email failed');
     }

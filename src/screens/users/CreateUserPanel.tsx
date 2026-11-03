@@ -62,7 +62,7 @@ export function CreateUserPanel({ open, onClose, onCreated }: { open: boolean; o
         // Shown once — the server never returns it again. Copy before closing the toast.
         toast({ kind: 'success', title: `${u.name} created`, body: `Temporary password: ${temporaryPassword}`, durationMs: 60_000, action: { label: 'Copy', onClick: () => void navigator.clipboard?.writeText(temporaryPassword).catch(() => undefined) } });
       } else {
-        toast({ kind: 'success', title: mode === 'INVITE' ? `Invite sent to ${u.email}` : `${u.name} created`, body: mode === 'INVITE' ? 'The link expires in 7 days.' : undefined });
+        toast({ kind: 'success', title: mode === 'INVITE' ? `Invite sent to ${u.email}` : `${u.name} created`, body: mode === 'INVITE' ? 'The link expires in 48 hours.' : undefined });
       }
       reset(); onClose();
     } catch (err) {

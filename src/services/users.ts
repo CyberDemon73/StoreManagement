@@ -5,6 +5,7 @@ import { passwordResetTokens, sessions, users } from '@/db/schema';
 import { audit } from '@/lib/audit';
 import { createSession, generateToken, hashToken, revokeAllSessions, type AuthUser, type NewSession, type ReqCtx } from '@/lib/auth';
 import { sendEmail } from '@/lib/email';
+import { inviteEmail, resetLinkEmail, resetNoticeEmail, type RenderedEmail } from '@/lib/email-templates';
 import { getEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
 import { describeError } from '@/lib/http';
@@ -36,9 +37,9 @@ function appUrl(path: string): string {
 }
 
 /** Mail failures are logged, not surfaced: the account change is already committed. */
-async function sendSafely(to: string, subject: string, text: string, userId: string): Promise<void> {
+async function sendSafely(to: string, mail: RenderedEmail, userId: string): Promise<void> {
   try {
-    await sendEmail({ to, subject, text });
+    await sendEmail({ to, ...mail });
   } catch (err) {
     logger.error({ err: describeError(err), userId }, 'user admin email failed');
   }
@@ -108,8 +109,8 @@ async function issueInviteToken(tx: Db, userId: string): Promise<string> {
   return raw;
 }
 
-function inviteText(name: string, actorName: string, token: string): string {
-  return `Hello ${name},\n\n${actorName} invited you to Avenue Brand. Use this link within 48 hours to set your password:\n${appUrl(`/set-password?token=${token}`)}\n`;
+function inviteMail(name: string, actorName: string, token: string): RenderedEmail {
+  return inviteEmail({ name, actorName, link: appUrl(`/set-password?token=${token}`) });
 }
 
 /**
@@ -186,12 +187,7 @@ export async function createUser(
   }
 
   if (inviteToken) {
-    await sendSafely(
-      user.email,
-      'You have been invited to Avenue Brand',
-      inviteText(user.name, actor.name, inviteToken),
-      user.id,
-    );
+    await sendSafely(user.email, inviteMail(user.name, actor.name, inviteToken), user.id);
   }
   return temporaryPassword ? { user, temporaryPassword } : { user };
 }
@@ -320,24 +316,14 @@ export async function resetUserPassword(
 
   const { target, inviteToken } = result;
   if (inviteToken) {
-    await sendSafely(target.email, 'You have been invited to Avenue Brand', inviteText(target.name, actor.name, inviteToken), target.id);
+    await sendSafely(target.email, inviteMail(target.name, actor.name, inviteToken), target.id);
     return {};
   }
   if (resetToken) {
-    await sendSafely(
-      target.email,
-      'Reset your Avenue Brand password',
-      `Hello ${target.name},\n\nYour password was reset by ${actor.name}. Use this link within 30 minutes to choose a new password:\n${appUrl(`/reset?token=${resetToken}`)}\n\nIf you did not expect this, contact your store administrator.\n`,
-      target.id,
-    );
+    await sendSafely(target.email, resetLinkEmail({ name: target.name, actorName: actor.name, link: appUrl(`/reset?token=${resetToken}`) }), target.id);
   } else {
     // Never include the temporary password: it is handed over in person.
-    await sendSafely(
-      target.email,
-      'Your Avenue Brand password was reset',
-      `Hello ${target.name},\n\nYour password was reset by ${actor.name}. You have been signed out everywhere; ${actor.name} will give you a temporary password, and you will choose a new one when you next sign in.\n\nIf you did not expect this, contact your store administrator.\n`,
-      target.id,
-    );
+    await sendSafely(target.email, resetNoticeEmail({ name: target.name, actorName: actor.name }), target.id);
   }
   return temporaryPassword ? { temporaryPassword } : {};
 }

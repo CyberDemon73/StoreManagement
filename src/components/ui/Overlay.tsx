@@ -9,15 +9,24 @@ import { useBreakpoint } from '@/lib/use-api';
 /* ---------- shared focus/escape handling ---------- */
 function useModal(open: boolean, onClose: () => void) {
   const ref = useRef<HTMLDivElement>(null);
+  // Callers pass a new onClose on every render. Reading it through a ref keeps this effect tied to
+  // `open` only; otherwise every keystroke in a form re-ran it and moved focus to the × button.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
     if (!open) return;
     const prev = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onCloseRef.current(); } };
     document.addEventListener('keydown', onKey);
     document.body.style.overflow = 'hidden';
-    const t = setTimeout(() => { const el = ref.current?.querySelector<HTMLElement>('[data-autofocus], input, select, textarea, button'); el?.focus(); }, 30);
+    const t = setTimeout(() => {
+      const root = ref.current;
+      // Prefer an explicit target, then the first field, and only then a button (never the × first).
+      const el = root?.querySelector<HTMLElement>('[data-autofocus]') ?? root?.querySelector<HTMLElement>('input:not([type=hidden]), select, textarea') ?? root?.querySelector<HTMLElement>('button');
+      el?.focus();
+    }, 30);
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = ''; clearTimeout(t); prev?.focus?.(); };
-  }, [open, onClose]);
+  }, [open]);
   return ref;
 }
 
