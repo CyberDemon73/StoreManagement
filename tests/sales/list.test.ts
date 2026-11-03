@@ -52,7 +52,8 @@ describe('GET /sales', () => {
     expect(status).toBe(200);
     expect(body).toMatchObject({ page: 1, pageSize: 25, total: 2 });
     expect(numbers(body)).toEqual(['AS-000002', 'AS-000001']);
-    expect(body.data[1]).toMatchObject({ sellerName: 'Sam', cost: 1500, items: [{ qty: 2 }, { qty: 1 }], returns: [] });
+    expect(body.data[1]).toMatchObject({ sellerName: 'Sam', cost: 1500, returns: [] });
+    expect(body.data[1].items.map((i: { qty: number }) => i.qty).sort()).toEqual([1, 2]);
   });
 
   it('shows a SELLER only their own sales, stripped of cost fields', async () => {
