@@ -163,8 +163,8 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  postcss: '>=8.5.18'
-  tinypool: '>=2.1.2'
+  postcss: ^8.5.18
+  vitest>tinypool: ^2.1.2
 
 importers:
 

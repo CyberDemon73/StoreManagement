@@ -8,7 +8,7 @@ export default defineConfig({
   casing: 'snake_case',
   dbCredentials: {
     // Migrations use the direct (unpooled) connection; fall back for local setups.
-    url: process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL ?? '',
+    url: process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL || '',
   },
   strict: true,
   verbose: true,

@@ -1,4 +1,4 @@
--- Rollback: DROP TABLE audit_log, settings, sessions, password_reset_tokens, failed_logins, users; DROP TYPE role, user_status, token_purpose;
+-- Rollback: DROP TABLE audit_log, settings, sessions, password_reset_tokens, failed_logins, users; DROP TYPE role, user_status, token_purpose; Also DELETE FROM drizzle.__drizzle_migrations WHERE hash = <this migration's hash> (or the row for tag 0001) so it can be re-applied.
 CREATE TYPE "public"."role" AS ENUM('ADMIN', 'MANAGER', 'SELLER');--> statement-breakpoint
 CREATE TYPE "public"."token_purpose" AS ENUM('RESET', 'INVITE');--> statement-breakpoint
 CREATE TYPE "public"."user_status" AS ENUM('ACTIVE', 'DISABLED');--> statement-breakpoint

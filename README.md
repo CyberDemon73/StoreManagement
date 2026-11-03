@@ -3,11 +3,11 @@
 Inventory, sales and reporting for a single retail store with sized/colored products. Next.js 15 + Drizzle + Neon Postgres, deployed on Vercel. Installable PWA for phone, iPad and desktop. Roles: Admin, Manager, Seller.
 
 ## Quick start (local)
-Requirements: Node 20+ (22 recommended), pnpm 10+ (`npm i -g pnpm`), a Neon project (free tier). Upstash and Resend are optional locally: without them the app uses an in-memory rate limiter and logs emails instead of sending them.
+Requirements: Node 22, pnpm 12 (`npm i -g pnpm@12`), a Neon project (free tier). Upstash and Resend are optional locally: without them the app uses an in-memory rate limiter and logs emails instead of sending them.
 
 ```bash
 pnpm install
-cp .env.example .env        # fill DATABASE_URL, DATABASE_URL_UNPOOLED, SETUP_TOKEN, SESSION_SECRET
+cp .env.example .env        # fill DATABASE_URL, DATABASE_URL_UNPOOLED, SETUP_TOKEN
 pnpm db:migrate             # applies drizzle/*.sql to DATABASE_URL_UNPOOLED
 pnpm db:seed                # creates the settings row (catalogue seed arrives in Sprint 1)
 pnpm dev                    # http://localhost:3000
@@ -38,8 +38,8 @@ curl -i -X POST http://localhost:3000/api/v1/setup \
 1. **Neon:** create a project. Extensions (`citext`, `pg_trgm`) are created by migration `0000_extensions.sql`; Neon's default role may create them. Copy the pooled string as `DATABASE_URL` and the direct string as `DATABASE_URL_UNPOOLED`.
 2. **Upstash:** create a Redis database; copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
 3. **Resend:** create an API key and a verified sender; set `RESEND_API_KEY` and `EMAIL_FROM`.
-4. **Vercel:** import the repo (framework Next.js, root `/`, build `pnpm build`). Add the environment variables below for Production and Preview (use a separate Neon branch for Preview). Function region: closest to Neon.
-5. Run migrations against production once before the first deploy: `DATABASE_URL_UNPOOLED=<prod direct url> pnpm db:migrate`.
+4. **Vercel:** import the repo (framework Next.js, root `/`, build `pnpm build`). In Project Settings select Node.js 22, and set `ENABLE_EXPERIMENTAL_COREPACK=1` in the Vercel env so the pnpm 12 pinned in `packageManager` is used. Add the environment variables below for Production and Preview (use a separate Neon branch for Preview). `APP_URL` must be set per environment: Preview deployments need their own `APP_URL` (or a fixed preview domain), otherwise every mutation is rejected with 403 by the CSRF origin check. Function region: closest to Neon.
+5. Run migrations against production once before the first deploy: `DATABASE_URL_UNPOOLED=<prod direct url> pnpm db:migrate`. Migrations are NOT run in the Vercel build: run `pnpm db:migrate` manually or from CI before each deploy that ships a migration. A build-step migration would race between concurrent builds and would target whatever database the Preview environment points to.
 6. Deploy, then open `https://<app>/setup` (or call `POST /api/v1/setup`) with `SETUP_TOKEN` to create the admin.
 
 ### Environment variables (set in Vercel)
@@ -48,8 +48,8 @@ curl -i -X POST http://localhost:3000/api/v1/setup \
 | `DATABASE_URL` | yes | Neon pooled connection (runtime) |
 | `DATABASE_URL_UNPOOLED` | yes | Neon direct connection (migrations) |
 | `APP_URL` | yes | Public origin, e.g. `https://stock.example.com`; used for the CSRF origin check and email links |
-| `SETUP_TOKEN` | yes | One-time token required by `POST /setup` |
-| `SESSION_SECRET` | yes | 32+ random bytes base64 (`openssl rand -base64 32`); reserved for signed non-session cookies |
+| `SETUP_TOKEN` | yes | One-time token (≥16 chars, `openssl rand -hex 16`) required by `POST /setup` |
+| `SESSION_SECRET` | no (reserved, not used yet) | 32+ random bytes base64 (`openssl rand -base64 32`); reserved for signed non-session cookies |
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | prod yes | Distributed rate limits. Unset → in-memory limiter (per instance; fine for local dev only) |
 | `RESEND_API_KEY` / `EMAIL_FROM` | prod yes | Password reset emails. Unset → emails are logged, not sent |
 | `CRON_SECRET` | later | Bearer token for Vercel Cron routes (Sprint 6) |

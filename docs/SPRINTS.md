@@ -11,7 +11,7 @@ Each sprint: ~1 Claude Code session of focused work. Run `/sprint N` (skill incl
 **Goal:** empty but secure app deployed on Vercel with a database, auth and roles.
 
 - [x] `create-next-app` (TS, App Router, Tailwind, ESLint), `src/` layout, strict TS, path aliases.
-- [x] Drizzle + Neon: `drizzle.config.ts`, `src/db/schema/*.ts`, `src/db/client.ts` (HTTP driver for serverless), migration scripts `db:generate / db:migrate / db:seed`.
+- [x] Drizzle + Neon: `drizzle.config.ts`, `src/db/schema/*.ts`, `src/db/client.ts` (neon-serverless WebSocket Pool; see DECISIONS), migration scripts `db:generate / db:migrate / db:seed`.
 - [x] Schema v1: `users`, `sessions`, `password_reset_tokens`, `settings`, `audit_log`.
 - [x] Auth: Argon2id hashing; `POST /auth/login`, `POST /auth/logout`, `GET /auth/me`, `POST /auth/forgot`, `POST /auth/reset`, `POST /setup` (only when `users` is empty).
 - [x] Session cookie: httpOnly, Secure, SameSite=Lax, `__Host-` prefix, 12 h idle / 30 d absolute, rotate on login, DB-backed, revoke all.

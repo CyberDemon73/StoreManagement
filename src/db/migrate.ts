@@ -5,7 +5,7 @@ import { migrate } from 'drizzle-orm/neon-serverless/migrator';
 import ws from 'ws';
 
 async function main(): Promise<void> {
-  const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL;
+  const url = process.env.DATABASE_URL_UNPOOLED || process.env.DATABASE_URL;
   if (!url) throw new Error('Set DATABASE_URL_UNPOOLED (or DATABASE_URL) before running migrations');
   neonConfig.webSocketConstructor = ws;
   const pool = new Pool({ connectionString: url });

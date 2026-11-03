@@ -19,7 +19,7 @@ Project skills (`/api-endpoint`, `/db-migration`, `/analytics-query`, `/sprint`)
 
 ## Stack (do not swap without a note in DECISIONS.md)
 - Next.js 15 App Router, TypeScript strict, pnpm, Tailwind.
-- Drizzle ORM + `@neondatabase/serverless` (HTTP driver). Migrations with `drizzle-kit`.
+- Drizzle ORM + `@neondatabase/serverless` (WebSocket Pool via `drizzle-orm/neon-serverless`; interactive transactions). Migrations with `drizzle-kit`.
 - Zod for all input validation. Argon2id (`@node-rs/argon2`) for passwords.
 - Upstash Redis + `@upstash/ratelimit`. Vercel Blob for images. Resend for email.
 - Vitest for tests. pino for logs.

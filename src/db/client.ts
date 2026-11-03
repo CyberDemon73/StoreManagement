@@ -22,7 +22,10 @@ export function getDb(): Db {
   if (!url) logger.warn('DATABASE_URL is not set; database queries will fail');
   // Node has no global WebSocket on older runtimes; Vercel's Node runtime is fine with ws.
   neonConfig.webSocketConstructor = ws;
-  current = drizzle(new Pool({ connectionString: url }), { schema, casing: 'snake_case' }) as unknown as Db;
+  const pool = new Pool({ connectionString: url, max: 5, idleTimeoutMillis: 10_000 });
+  // An idle client erroring (e.g. Neon closing the socket) must not crash the process.
+  pool.on('error', (err: Error) => logger.error({ err: { name: err.name, message: err.message } }, 'pg pool error'));
+  current = drizzle(pool, { schema, casing: 'snake_case' }) as unknown as Db;
   return current;
 }
 
