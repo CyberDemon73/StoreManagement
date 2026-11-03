@@ -1,0 +1,2 @@
+-- Rollback: enum values cannot be dropped in Postgres; DELETE FROM notifications WHERE kind = 'SYSTEM', then recreate notification_kind without it (or leave the unused value). DELETE the 0010 row from drizzle.__drizzle_migrations.
+ALTER TYPE "public"."notification_kind" ADD VALUE 'SYSTEM';
