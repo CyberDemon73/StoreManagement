@@ -7,7 +7,8 @@ import type { Db } from '@/db/client';
 
 /**
  * Standard analytics GET route: `analytics.read`, strict query schema, memoised result,
- * `Cache-Control: private, max-age=60` (reports are manager-only and per store).
+ * `Cache-Control: private, no-store`: tills are shared, so the browser must not keep a manager's
+ * report after logout; speed comes from the server-side Upstash memo instead.
  */
 export function analyticsRoute<Q extends Record<string, unknown>, R>(
   report: string,
@@ -19,7 +20,7 @@ export function analyticsRoute<Q extends Record<string, unknown>, R>(
     const key = `${report}:${new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)])).toString()}`;
     const body = await memo(key, () => run(db, q));
     const res = json(body);
-    res.headers.set('Cache-Control', 'private, max-age=60');
+    res.headers.set('Cache-Control', 'private, no-store');
     return res;
   });
 }

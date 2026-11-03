@@ -48,7 +48,7 @@ describe('price list', () => {
     const manager = await sessionCookieFor(db, fx.manager.id);
     const ok = await call(GET, { path: '/api/v1/analytics/price-list?page=1&pageSize=2', cookie: manager });
     expect(ok.status).toBe(200);
-    expect(ok.headers.get('Cache-Control')).toBe('private, max-age=60');
+    expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
     expect(await ok.json()).toMatchObject({ page: 1, pageSize: 2, total: 3 });
     const seller = await sessionCookieFor(db, fx.sellerA.id);
     expect((await call(GET, { path: '/api/v1/analytics/price-list', cookie: seller })).status).toBe(403);

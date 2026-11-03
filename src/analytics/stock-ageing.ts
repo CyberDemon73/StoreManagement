@@ -31,8 +31,8 @@ export async function stockAgeing(db: Db): Promise<AgeingBucket[]> {
       from soh join variants v on v.id = soh.variant_id
     )
     select case when days <= 30 then '0-30' when days <= 60 then '31-60' when days <= 90 then '61-90' else '90+' end as bucket,
-           sum(qty)::int as units, sum(qty * cost_price)::int as value_cost
+           sum(qty)::float8 as units, sum(qty::numeric * cost_price)::float8 as value_cost
     from aged group by 1`)) as { rows: { bucket: string; units: number; value_cost: number }[] };
   const by = new Map(res.rows.map((r) => [r.bucket, r]));
-  return AGEING_BUCKETS.map((bucket) => ({ bucket, units: by.get(bucket)?.units ?? 0, valueCost: by.get(bucket)?.value_cost ?? 0 }));
+  return AGEING_BUCKETS.map((bucket) => ({ bucket, units: Number(by.get(bucket)?.units ?? 0), valueCost: Number(by.get(bucket)?.value_cost ?? 0) }));
 }

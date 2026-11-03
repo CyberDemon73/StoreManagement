@@ -10,12 +10,12 @@ import { previousRange, type AnalyticsRange } from './range';
  * Dashboard KPIs (docs/plans/sprint-4.md, Global Constraints):
  *   totalCash   = Σ saleLines.revenue − Σ returnLines.refund            (rounded once)
  *   cogs        = Σ saleLines.cost − Σ returnLines.restocked_cost
- *   grossProfit = totalCash − cogs;  marginPct = profit ÷ revenue × 100 (1 decimal, 0 when no revenue)
+ *   grossProfit = totalCash − cogs;  marginPct = profit ÷ revenue × 100 (1 decimal, 0 when revenue ≤ 0)
  *   cashByMethod = sales revenue by payment method − refunds by refund method (all four keys)
  *   salesCount  = non-VOID sales created in range;  avgBasket = round(Σ sale totals ÷ salesCount)
  *   stock KPIs  = current stock on hand (stockOnHand(), not range-bound)
  *   low/out     = same rule as GET /stock/low
- *   deltas      = % change vs previousRange(r), 1 decimal; previous 0 → 0 if current 0 else 100
+ *   deltas      = % change vs previousRange(r), 1 decimal; previous 0 → 0 if current 0 else sign(current) × 100
  */
 
 interface PeriodTotals {
@@ -38,7 +38,7 @@ async function periodTotals(db: Db, r: AnalyticsRange): Promise<PeriodTotals> {
       from sales where status <> 'VOID' and created_at >= ${r.start} and created_at < ${r.end}
     )
     select round(t.revenue)::float8 as revenue, round(t.cogs)::float8 as cogs,
-           coalesce(round((t.revenue - t.cogs) * 100 / nullif(t.revenue, 0), 1), 0)::float8 as margin_pct,
+           (case when t.revenue > 0 then round((t.revenue - t.cogs) * 100 / t.revenue, 1) else 0 end)::float8 as margin_pct,
            s.n::int as sales_count, s.total::float8 as sales_total
     from t, s`)) as { rows: Record<string, unknown>[] };
   const row = res.rows[0] ?? {};
@@ -70,9 +70,9 @@ async function stockTotals(db: Db) {
 
 const round1 = (n: number) => Math.round(n * 10) / 10 || 0;
 
-/** Percent change, one decimal. A previous value of 0 gives 0 (no change) or 100 (from nothing). */
+/** Percent change, one decimal. A previous value of 0 gives 0 (no change) or ±100 (from nothing, keeping the sign). */
 export function deltaPct(cur: number, prev: number): number {
-  if (prev === 0) return cur === 0 ? 0 : 100;
+  if (prev === 0) return cur === 0 ? 0 : Math.sign(cur) * 100;
   return round1(((cur - prev) / Math.abs(prev)) * 100);
 }
 

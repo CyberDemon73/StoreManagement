@@ -49,7 +49,7 @@ describe('GET /analytics/sales-trend', () => {
     const cookie = await sessionCookieFor(db, fx.manager.id);
     const res = await call(GET, { path: '/api/v1/analytics/sales-trend?from=2026-06-10&to=2026-06-11', cookie });
     expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('private, max-age=60');
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     expect(await res.json()).toEqual([EXPECTED.day10, EXPECTED.day11]);
   });
 

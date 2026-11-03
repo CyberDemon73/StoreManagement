@@ -10,7 +10,7 @@ import { rangeQuery, type AnalyticsRange } from './range';
  *   units   = Σ saleLines.qty − Σ returnLines.qty
  *   revenue = Σ saleLines.revenue − Σ returnLines.refund
  *   profit  = revenue − (Σ saleLines.cost − Σ returnLines.restocked_cost)
- *   marginPct = profit ÷ revenue × 100 (0 when revenue is 0), one decimal
+ *   marginPct = profit ÷ revenue × 100 (0 when revenue ≤ 0), one decimal
  * Sorted by `by` desc, then product name (then sku for variants); VOID sales never appear (facts).
  */
 
@@ -55,7 +55,7 @@ const measures = sql`
   a.units::float8 as "units",
   round(a.revenue)::float8 as "revenue",
   round(a.profit)::float8 as "profit",
-  coalesce(round(a.profit / nullif(a.revenue, 0) * 100, 1), 0)::float8 as "marginPct"`;
+  (case when a.revenue > 0 then round(a.profit / a.revenue * 100, 1) else 0 end)::float8 as "marginPct"`;
 
 export async function topProducts(db: Db, r: AnalyticsRange, o: TopOptions): Promise<Required<TopProduct>[]> {
   const res = (await db.execute(sql`

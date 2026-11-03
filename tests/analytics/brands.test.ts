@@ -1,8 +1,10 @@
-import { inArray } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { GET } from '@/app/api/v1/analytics/brands/route';
 import { getDb } from '@/db/client';
-import { brands as brandsTable, variants } from '@/db/schema';
+import { brands as brandsTable, categories as categoriesTable, variants } from '@/db/schema';
+import { categories } from '@/analytics/categories';
+import { dashboard } from '@/analytics/dashboard';
 import { brandSplit, brands } from '@/analytics/brands';
 import { resolveRange } from '@/analytics/range';
 import { EXPECTED, analyticsFixture } from '../helpers/analytics';
@@ -34,6 +36,26 @@ describe('brands report', () => {
     });
   });
 
+  it('retired brands and categories with activity in range still reconcile with total revenue', async () => {
+    const db = getDb();
+    const fx = await analyticsFixture(db);
+    await db.update(brandsTable).set({ isActive: false }).where(eq(brandsTable.id, fx.brandC.id));
+    await db.update(categoriesTable).set({ isActive: false }).where(eq(categoriesTable.id, fx.categoryT.id));
+    await db.insert(brandsTable).values({ name: 'Retired', isActive: false });
+    const r = await resolveRange(db, EXPECTED.range);
+
+    const bs = await brands(db, r);
+    expect(bs.map((b) => b.name)).toEqual(['Northline', 'Casa']);
+    expect(bs.reduce((a, b) => a + b.revenue, 0)).toBe(EXPECTED.revenue);
+    expect(bs.reduce((a, b) => a + b.sharePct, 0)).toBe(100);
+    const cs = await categories(db, r);
+    expect(cs.map((c) => c.name)).toEqual(['Tops']);
+    expect(cs.reduce((a, c) => a + c.revenue, 0)).toBe(EXPECTED.revenue);
+
+    const d = await dashboard(db, r);
+    expect(d.brandSplit).toEqual(bs.map(({ id, name, revenue, sharePct }) => ({ id, name, revenue, sharePct })));
+  });
+
   it('brandSplit gives id, name, revenue and share only', async () => {
     const db = getDb();
     await analyticsFixture(db);
@@ -49,7 +71,7 @@ describe('brands report', () => {
     const fx = await analyticsFixture(db);
     const ok = await call(GET, { path: PATH, cookie: await sessionCookieFor(db, fx.manager.id) });
     expect(ok.status).toBe(200);
-    expect(ok.headers.get('Cache-Control')).toBe('private, max-age=60');
+    expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
     expect((await ok.json())[0]).toMatchObject({ name: 'Northline', revenue: 3867 });
     const denied = await call(GET, { path: PATH, cookie: await sessionCookieFor(db, fx.sellerA.id) });
     expect(denied.status).toBe(403);

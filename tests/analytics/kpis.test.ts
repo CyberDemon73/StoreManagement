@@ -1,15 +1,38 @@
 import { eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { GET } from '@/app/api/v1/analytics/dashboard/route';
-import { kpis } from '@/analytics/kpis';
+import { brands } from '@/analytics/brands';
+import { categories } from '@/analytics/categories';
+import { deltaPct, kpis } from '@/analytics/kpis';
 import { resolveRange } from '@/analytics/range';
+import { topProducts } from '@/analytics/top-products';
 import { getDb } from '@/db/client';
-import { variants } from '@/db/schema';
+import { returns, variants } from '@/db/schema';
 import { EXPECTED, analyticsFixture } from '../helpers/analytics';
 import { call } from '../helpers/http';
 import { sessionCookieFor } from '../helpers/users';
 
 describe('kpis', () => {
+  it('marginPct is 0 when revenue is not positive (a range holding only a restocked return)', async () => {
+    const db = getDb();
+    const fx = await analyticsFixture(db);
+    await db.update(returns).set({ createdAt: new Date('2026-06-13T12:00:00Z') }).where(eq(returns.id, fx.returnId));
+    const r = await resolveRange(db, { from: '2026-06-13', to: '2026-06-13' });
+    // revenue −467, cogs −200 → profit −267: a loss, not a 57% margin.
+    expect(await kpis(db, r)).toMatchObject({ totalCash: -467, grossProfit: -267, marginPct: 0 });
+    expect((await brands(db, r)).find((b) => b.id === fx.brandC.id)).toMatchObject({ revenue: -467, profit: -267, marginPct: 0 });
+    expect((await categories(db, r)).find((c) => c.id === fx.categoryT.id)).toMatchObject({ revenue: -467, marginPct: 0 });
+    expect(await topProducts(db, r, { by: 'units', limit: 10 })).toEqual([
+      expect.objectContaining({ productId: fx.productPC.id, revenue: -467, profit: -267, marginPct: 0 }),
+    ]);
+  });
+
+  it('deltaPct from a zero previous period keeps the sign of the current value', () => {
+    expect(deltaPct(-1000, 0)).toBe(-100);
+    expect(deltaPct(1000, 0)).toBe(100);
+    expect(deltaPct(0, 0)).toBe(0);
+  });
+
   it('computes cash, profit, counts and basket from the shared facts (VOID excluded, refunds netted)', async () => {
     const db = getDb();
     const fx = await analyticsFixture(db);
@@ -50,13 +73,13 @@ describe('kpis', () => {
 });
 
 describe('GET /analytics/dashboard', () => {
-  it('manager gets 200 with a private 60s cache header', async () => {
+  it('manager gets 200 with a private no-store header', async () => {
     const db = getDb();
     const fx = await analyticsFixture(db);
     const cookie = await sessionCookieFor(db, fx.manager.id);
     const res = await call(GET, { path: '/api/v1/analytics/dashboard?from=2026-06-10&to=2026-06-11', cookie });
     expect(res.status).toBe(200);
-    expect(res.headers.get('cache-control')).toBe('private, max-age=60');
+    expect(res.headers.get('cache-control')).toBe('private, no-store');
     const body = await res.json();
     expect(body.kpis.totalCash).toBe(EXPECTED.revenue);
   });

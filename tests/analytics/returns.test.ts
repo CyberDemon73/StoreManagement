@@ -30,7 +30,7 @@ describe('returns report', () => {
     const manager = await sessionCookieFor(db, fx.manager.id);
     const ok = await call(GET, { path: `/api/v1/analytics/returns?${QS}`, cookie: manager });
     expect(ok.status).toBe(200);
-    expect(ok.headers.get('Cache-Control')).toBe('private, max-age=60');
+    expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
     expect((await ok.json()).count).toBe(1);
 
     const seller = await sessionCookieFor(db, fx.sellerB.id);

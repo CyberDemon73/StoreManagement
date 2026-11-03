@@ -7,7 +7,8 @@ import type { AnalyticsRange } from './range';
  *   cogs    = Σ saleLines.cost    − Σ returnLines.restocked_cost
  *   profit  = revenue − cogs
  *   units   = Σ saleLines.qty     − Σ returnLines.qty
- * Values are numeric; round once per output row.
+ * Values are numeric (never int4 products, so no overflow); round once per output row.
+ * A sale with subtotal 0 (all lines priced 0) contributes revenue 0, not NULL.
  */
 
 /**
@@ -18,9 +19,9 @@ export function saleLines(r: AnalyticsRange): SQL {
   return sql`
     select s.id as sale_id, si.id as sale_item_id, si.variant_id, v.product_id, p.brand_id, p.category_id,
            s.seller_id, s.payment_method, s.created_at, si.qty, si.unit_price,
-           (si.line_total::numeric * s.total / nullif(s.subtotal, 0)) as revenue,
-           (coalesce(si.unit_cost, 0) * si.qty)::numeric as cost,
-           (si.line_total::numeric - si.line_total::numeric * s.total / nullif(s.subtotal, 0)) as discount_share
+           coalesce(si.line_total::numeric * s.total / nullif(s.subtotal, 0), 0) as revenue,
+           coalesce(si.unit_cost, 0)::numeric * si.qty as cost,
+           coalesce(si.line_total::numeric - si.line_total::numeric * s.total / nullif(s.subtotal, 0), 0) as discount_share
     from sales s
     join sale_items si on si.sale_id = s.id
     join variants v on v.id = si.variant_id
@@ -36,9 +37,9 @@ export function returnLines(r: AnalyticsRange): SQL {
   return sql`
     select rt.id as return_id, s.id as sale_id, si.id as sale_item_id, si.variant_id, v.product_id, p.brand_id,
            p.category_id, s.seller_id, rt.refund_method, rt.reason, rt.created_at, ri.qty, ri.restock,
-           (rt.refund_amount::numeric * (si.unit_price * ri.qty)
-              / nullif(sum(si.unit_price * ri.qty) over (partition by rt.id), 0)) as refund,
-           (case when ri.restock then coalesce(si.unit_cost, 0) * ri.qty else 0 end)::numeric as restocked_cost
+           coalesce(rt.refund_amount::numeric * (si.unit_price::numeric * ri.qty)
+              / nullif(sum(si.unit_price::numeric * ri.qty) over (partition by rt.id), 0), 0) as refund,
+           (case when ri.restock then coalesce(si.unit_cost, 0)::numeric * ri.qty else 0 end) as restocked_cost
     from returns rt
     join sales s on s.id = rt.sale_id
     join return_items ri on ri.return_id = rt.id

@@ -7,7 +7,7 @@ import type { AnalyticsRange } from './range';
 
 /*
  * Stock on hand (qty > 0) that has not sold for at least `days` days.
- *   lastSaleAt        = latest SALE movement, else earliest movement, else variant created_at
+ *   lastSaleAt        = latest SALE movement of a non-VOID sale, else earliest movement, else variant created_at
  *   daysSinceLastSale = floor((now − lastSaleAt) in days); included when ≥ days
  *   soldLast90d       = non-VOID units sold in the last 90 days − units returned in the last 90 days, floor 0
  *   valueAtCost       = qty × coalesce(cost_price, 0)
@@ -46,7 +46,9 @@ export async function slowMovers(db: Db, q: SlowMoversQuery): Promise<SlowMover[
     last_sale as (
       select soh.variant_id,
              coalesce(
-               (select max(m.created_at) from stock_movements m where m.variant_id = soh.variant_id and m.type = 'SALE'),
+               (select max(m.created_at) from stock_movements m
+                  join sales s on m.reference_kind = 'sale' and s.id = m.reference_id
+                 where m.variant_id = soh.variant_id and m.type = 'SALE' and s.status <> 'VOID'),
                (select min(m.created_at) from stock_movements m where m.variant_id = soh.variant_id),
                v.created_at) as at
       from soh join variants v on v.id = soh.variant_id
@@ -57,8 +59,8 @@ export async function slowMovers(db: Db, q: SlowMoversQuery): Promise<SlowMover[
     select soh.variant_id, p.name as product_name, b.name as brand, soh.size, soh.color_name, soh.color_hex, soh.sku,
            soh.qty::int as qty,
            floor(extract(epoch from (now() - ls.at)) / 86400)::int as days_since,
-           (soh.qty * soh.cost_price)::int as value_at_cost,
-           greatest(coalesce(sold.qty, 0) - coalesce(returned.qty, 0), 0)::int as sold_90
+           (soh.qty::numeric * soh.cost_price)::float8 as value_at_cost,
+           greatest(coalesce(sold.qty, 0) - coalesce(returned.qty, 0), 0)::float8 as sold_90
     from soh
     join last_sale ls on ls.variant_id = soh.variant_id
     join products p on p.id = soh.product_id
@@ -90,8 +92,8 @@ export async function slowMovers(db: Db, q: SlowMoversQuery): Promise<SlowMover[
     sku: x.sku,
     qty: x.qty,
     daysSinceLastSale: x.days_since,
-    valueAtCost: x.value_at_cost,
-    soldLast90d: x.sold_90,
+    valueAtCost: Number(x.value_at_cost),
+    soldLast90d: Number(x.sold_90),
     suggestion: suggestionFor(x.days_since),
   }));
 }

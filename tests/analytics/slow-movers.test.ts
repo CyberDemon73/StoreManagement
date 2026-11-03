@@ -4,6 +4,7 @@ import { GET } from '@/app/api/v1/analytics/slow-movers/route';
 import { getDb, type Db } from '@/db/client';
 import { brands, categories, products, settings, stockMovements, variants, type VariantRow } from '@/db/schema';
 import { slowMovers } from '@/analytics/slow-movers';
+import { voidSale } from '@/services/sale-void';
 import { createSale } from '@/services/sales';
 import { applyMovement } from '@/services/stock';
 import { call } from '../helpers/http';
@@ -90,13 +91,22 @@ describe('slow movers', () => {
     expect((await slowMovers(db, { days: 90 })).map((r) => r.variantId)).toEqual([fx.old.id]);
   });
 
+  it('a voided sale does not count as the last sale', async () => {
+    const db = getDb();
+    const fx = await slowFixture(db);
+    const sale = await createSale(db, authUserOf(fx.seller, 'Sami'), { items: [{ variantId: fx.old.id, qty: 1 }], paymentMethod: 'CASH' }, CTX);
+    await voidSale(db, authUserOf(fx.manager, 'Mona'), sale.id, { reason: 'mistake' }, CTX);
+    const rows = await slowMovers(db, { days: 60 });
+    expect(rows.find((r) => r.variantId === fx.old.id)).toMatchObject({ qty: 10, daysSinceLastSale: 100, soldLast90d: 0, suggestion: 'Markdown 20%' });
+  });
+
   it('GET: manager 200 with private cache, SELLER 403, days=0 400', async () => {
     const db = getDb();
     const fx = await slowFixture(db);
     const manager = await sessionCookieFor(db, fx.manager.id);
     const ok = await call(GET, { path: '/api/v1/analytics/slow-movers?days=90', cookie: manager });
     expect(ok.status).toBe(200);
-    expect(ok.headers.get('Cache-Control')).toBe('private, max-age=60');
+    expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
     expect((await ok.json()).map((r: { suggestion: string }) => r.suggestion)).toEqual(['Markdown 20%']);
     expect((await call(GET, { path: '/api/v1/analytics/slow-movers', cookie: manager })).status).toBe(200);
 

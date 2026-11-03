@@ -1,6 +1,9 @@
+import { inArray } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
 import { GET } from '@/app/api/v1/analytics/sellers/route';
 import { getDb } from '@/db/client';
+import { sales } from '@/db/schema';
+import { kpis } from '@/analytics/kpis';
 import { resolveRange } from '@/analytics/range';
 import { sellers } from '@/analytics/sellers';
 import { EXPECTED, analyticsFixture } from '../helpers/analytics';
@@ -42,13 +45,47 @@ describe('sellers report', () => {
     ]);
   });
 
+  it('reconciles with kpis totalCash: refunds on older sales count for their seller', async () => {
+    const db = getDb();
+    const fx = await analyticsFixture(db);
+    for (const range of [{ from: '2026-06-11', to: '2026-06-11' }, EXPECTED.range]) {
+      const r = await resolveRange(db, range);
+      const rows = await sellers(db, r);
+      expect(rows.reduce((a, s) => a + s.revenue, 0)).toBe((await kpis(db, r)).totalCash);
+    }
+    expect((await kpis(db, await resolveRange(db, { from: '2026-06-11', to: '2026-06-11' }))).totalCash).toBe(33);
+    const day11 = await sellers(db, await resolveRange(db, { from: '2026-06-11', to: '2026-06-11' }));
+    expect(day11.find((s) => s.userId === fx.sellerB.id)).toEqual({
+      userId: fx.sellerB.id,
+      name: 'Bassem',
+      salesCount: 0,
+      revenue: -467,
+      avgBasket: 0,
+      discountGiven: 0,
+      discountPct: 0,
+      returnsCount: 1,
+      returnsValue: 467,
+      returnRatePct: 0,
+    });
+  });
+
+  it('groups sales without a seller under one Unassigned row', async () => {
+    const db = getDb();
+    const fx = await analyticsFixture(db);
+    await db.update(sales).set({ sellerId: null }).where(inArray(sales.id, [fx.saleIds.s1, fx.saleIds.s2]));
+    const r = await resolveRange(db, EXPECTED.range);
+    const rows = await sellers(db, r);
+    expect(rows.find((s) => s.userId === '')).toMatchObject({ name: 'Unassigned', salesCount: 2, revenue: 4333, returnsCount: 1 });
+    expect(rows.reduce((a, s) => a + s.revenue, 0)).toBe(EXPECTED.revenue);
+  });
+
   it('GET: manager 200 with private cache, SELLER 403, missing range 400', async () => {
     const db = getDb();
     const fx = await analyticsFixture(db);
     const manager = await sessionCookieFor(db, fx.manager.id);
     const ok = await call(GET, { path: `/api/v1/analytics/sellers?${QS}`, cookie: manager });
     expect(ok.status).toBe(200);
-    expect(ok.headers.get('Cache-Control')).toBe('private, max-age=60');
+    expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
     expect((await ok.json()).map((s: { name: string }) => s.name)).toEqual(['Amira', 'Bassem']);
 
     const seller = await sessionCookieFor(db, fx.sellerA.id);

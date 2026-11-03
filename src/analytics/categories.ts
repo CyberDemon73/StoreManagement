@@ -4,9 +4,9 @@ import { dimensionStats } from './brands';
 import type { AnalyticsRange } from './range';
 
 /*
- * Per active category, over the range — same definitions as the brands report:
+ * Per active category (plus retired ones with sales/returns in range), over the range — same definitions as the brands report:
  *   revenue = Σ saleLines.revenue − Σ returnLines.refund; profit = revenue − cogs;
- *   unitsSold = Σ saleLines.qty − Σ returnLines.qty; marginPct = profit ÷ revenue × 100 (one decimal).
+ *   unitsSold = Σ saleLines.qty − Σ returnLines.qty; marginPct = profit ÷ revenue × 100 (one decimal, 0 when revenue ≤ 0).
  *   daysOfCover = round(unitsInStock ÷ (unitsSold ÷ range days)), 999 when unitsSold ≤ 0.
  * Stock figures are current on-hand of active variants of ACTIVE products.
  */

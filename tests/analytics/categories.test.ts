@@ -42,7 +42,7 @@ describe('categories report', () => {
     const fx = await analyticsFixture(db);
     const ok = await call(GET, { path: PATH, cookie: await sessionCookieFor(db, fx.manager.id) });
     expect(ok.status).toBe(200);
-    expect(ok.headers.get('Cache-Control')).toBe('private, max-age=60');
+    expect(ok.headers.get('Cache-Control')).toBe('private, no-store');
     expect((await ok.json())[0]).toMatchObject({ name: 'Tops', revenue: EXPECTED.revenue });
     const denied = await call(GET, { path: PATH, cookie: await sessionCookieFor(db, fx.sellerA.id) });
     expect(denied.status).toBe(403);
