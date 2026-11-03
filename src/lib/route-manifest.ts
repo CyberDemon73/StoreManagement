@@ -16,6 +16,8 @@ export interface RouteSpec {
   /** Body that passes validation, so the authz test reaches the permission check. */
   sampleBody?: unknown;
   sampleParams?: Record<string, string>;
+  /** Multipart body (uploads); takes precedence over sampleBody in the authz matrix. */
+  sampleForm?: () => FormData;
 }
 
 /**
@@ -62,4 +64,8 @@ export const ROUTES: RouteSpec[] = [
     sampleBody: { token: 'x'.repeat(43), password: 'Zq9!vt-plume-orbit' },
   },
   { method: 'GET', path: '/audit', access: 'audit.read', load: () => import('@/app/api/v1/audit/route') },
+  // --- catalog (brands, categories, suppliers) ---
+  // --- products ---
+  // --- variants ---
+  // --- uploads ---
 ];

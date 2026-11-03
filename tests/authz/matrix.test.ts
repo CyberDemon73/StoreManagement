@@ -102,7 +102,7 @@ describe('authz matrix', () => {
       const handlers = await route.load();
       const handler = handlers[route.method];
       if (!handler) throw new Error(`no ${route.method} export for ${route.path}`);
-      const res = await call(handler, { method: route.method, path: `/api/v1${route.path}`, body: route.sampleBody, params: route.sampleParams });
+      const res = await call(handler, { method: route.method, path: `/api/v1${route.path}`, body: route.sampleBody, form: route.sampleForm?.(), params: route.sampleParams });
       if (route.access === 'public') await expectNotBlocked(res);
       else expect(res.status).toBe(401);
     });
@@ -116,7 +116,7 @@ describe('authz matrix', () => {
         const handlers = await route.load();
         const handler = handlers[route.method];
         if (!handler) throw new Error(`no ${route.method} export for ${route.path}`);
-        const res = await call(handler, { method: route.method, path: `/api/v1${route.path}`, body: route.sampleBody, params: route.sampleParams, cookie });
+        const res = await call(handler, { method: route.method, path: `/api/v1${route.path}`, body: route.sampleBody, form: route.sampleForm?.(), params: route.sampleParams, cookie });
         if (allowed) await expectNotBlocked(res);
         else expect(res.status).toBe(403);
       });
