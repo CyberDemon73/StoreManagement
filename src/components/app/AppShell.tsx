@@ -123,7 +123,7 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
       <button type="button" onClick={onSearch} className="hidden min-h-9 w-64 items-center gap-2 rounded-input border border-line bg-surface px-3 text-sm text-ink-3 hover:bg-surface-2 lg:flex xl:w-80" aria-label="Search (Command K)"><Search className="size-4" aria-hidden /><span className="flex-1 text-left">Search products, SKUs, sales…</span><Kbd>⌘K</Kbd></button>
       <Button variant="ghost" iconOnly aria-label="Search" onClick={onSearch} className="lg:hidden"><Search /></Button>
       {canViewAs && (
-        <Button variant={auth.viewAsSeller ? 'soft' : 'ghost'} size="sm" leading={<Eye />} onClick={() => auth.setViewAsSeller(!auth.viewAsSeller)} aria-pressed={auth.viewAsSeller} className="hidden md:inline-flex">{auth.viewAsSeller ? 'Exit seller view' : 'View as seller'}</Button>
+        <Button variant={auth.viewAsSeller ? 'soft' : 'ghost'} size="sm" leading={<Eye />} onClick={() => auth.setViewAsSeller(!auth.viewAsSeller)} aria-pressed={auth.viewAsSeller} className="max-md:hidden">{auth.viewAsSeller ? 'Exit seller view' : 'View as seller'}</Button>
       )}
       <NotificationsPopover />
       <Popover open={menu} onClose={() => setMenu(false)} anchor={<button type="button" aria-label="Account menu" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((o) => !o)} className="rounded-full"><Avatar name={user.name} /></button>}>
