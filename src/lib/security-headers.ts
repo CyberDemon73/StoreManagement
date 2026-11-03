@@ -41,10 +41,11 @@ function originOf(value: string | null): string | null {
  * Non-GET requests must come from our own origin (Origin, falling back to Referer) and carry the
  * custom header a cross-site form post cannot set.
  */
-export function isCsrfSafe(req: Request, appOrigin: string): boolean {
+export function isCsrfSafe(req: Request, appOrigin: string | readonly string[]): boolean {
   if (SAFE_METHODS.has(req.method.toUpperCase())) return true;
   const origin = originOf(req.headers.get('origin')) ?? originOf(req.headers.get('referer'));
-  if (origin !== appOrigin) return false;
+  const allowed = typeof appOrigin === 'string' ? [appOrigin] : appOrigin;
+  if (!origin || !allowed.includes(origin)) return false;
   return req.headers.get('x-requested-with') === REQUESTED_WITH_VALUE;
 }
 

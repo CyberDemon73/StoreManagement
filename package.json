@@ -15,7 +15,8 @@
     "db:seed": "tsx src/db/seed.ts",
     "stock:verify": "tsx src/db/verify-stock.ts",
     "db:seed-big": "tsx scripts/seed-big.ts",
-    "secrets:scan": "node scripts/scan-secrets.mjs"
+    "secrets:scan": "node scripts/scan-secrets.mjs",
+    "db:seed-users": "tsx scripts/seed-users.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",

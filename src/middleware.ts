@@ -3,12 +3,18 @@ import { buildCsp, isCsrfSafe, isValidRequestId, SECURITY_HEADERS } from '@/lib/
 
 // Runs on the edge: keep this file free of Node-only modules (db, pino, argon2).
 
-function appOrigin(): string {
+function appOrigins(): string[] {
+  let primary = 'http://localhost:3000';
   try {
-    return new URL(process.env.APP_URL ?? 'http://localhost:3000').origin;
+    primary = new URL(process.env.APP_URL ?? primary).origin;
   } catch {
-    return 'http://localhost:3000';
+    // keep the localhost default
   }
+  // Preview URLs change with every deploy, so no fixed APP_URL can match them; Vercel tells us
+  // the deployment's own hosts. Production stays pinned to APP_URL only.
+  if (process.env.VERCEL_ENV !== 'preview') return [primary];
+  const hosts = [process.env.VERCEL_URL, process.env.VERCEL_BRANCH_URL].filter((h): h is string => !!h);
+  return [primary, ...hosts.map((h) => `https://${h}`)];
 }
 
 function toBase64(bytes: Uint8Array): string {
@@ -30,7 +36,7 @@ export default function middleware(req: NextRequest): NextResponse {
     return res;
   };
 
-  if (req.nextUrl.pathname.startsWith('/api/') && !isCsrfSafe(req, appOrigin())) {
+  if (req.nextUrl.pathname.startsWith('/api/') && !isCsrfSafe(req, appOrigins())) {
     return applyHeaders(
       NextResponse.json({ error: { code: 'FORBIDDEN', message: 'Cross-site request blocked' } }, { status: 403 }),
     );

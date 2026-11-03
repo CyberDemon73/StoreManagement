@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import middleware from '@/middleware';
 import { buildCsp, SECURITY_HEADERS } from '@/lib/security-headers';
 
@@ -69,6 +69,28 @@ describe('CSRF origin check on /api mutations', () => {
       req('/api/v1/auth/login', { method: 'POST', headers: { referer: 'http://localhost:3000/login', 'x-requested-with': 'AvenueStock' } }),
     );
     expect(res.status).toBe(200);
+  });
+
+  describe('Vercel deployment URLs', () => {
+    const previewHost = 'avenue-stock-abc123-team.vercel.app';
+    const fromPreview = { origin: `https://${previewHost}`, 'x-requested-with': 'AvenueStock' };
+    afterEach(() => vi.unstubAllEnvs());
+
+    it('accepts the deployment and branch URLs on a preview deployment', async () => {
+      vi.stubEnv('VERCEL_ENV', 'preview');
+      vi.stubEnv('VERCEL_URL', previewHost);
+      vi.stubEnv('VERCEL_BRANCH_URL', 'avenue-stock-git-sprint-6-team.vercel.app');
+      expect((await middleware(req('/api/v1/auth/login', { method: 'POST', headers: fromPreview }))).status).toBe(200);
+      const branch = { ...fromPreview, origin: 'https://avenue-stock-git-sprint-6-team.vercel.app' };
+      expect((await middleware(req('/api/v1/auth/login', { method: 'POST', headers: branch }))).status).toBe(200);
+      expect((await middleware(req('/api/v1/auth/login', { method: 'POST', headers: { ...fromPreview, origin: 'https://evil.example' } }))).status).toBe(403);
+    });
+
+    it('accepts only APP_URL in production, even when VERCEL_URL is set', async () => {
+      vi.stubEnv('VERCEL_ENV', 'production');
+      vi.stubEnv('VERCEL_URL', previewHost);
+      expect((await middleware(req('/api/v1/auth/login', { method: 'POST', headers: fromPreview }))).status).toBe(403);
+    });
   });
 
   it('does not apply to GET requests or non-API paths', async () => {
