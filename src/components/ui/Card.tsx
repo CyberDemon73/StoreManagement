@@ -52,8 +52,9 @@ export function KpiCard({ label, value, unit, delta, deltaLabel, invert, sub, sp
 }
 
 export function Sparkline({ data, className }: { data: number[]; className?: string }) {
-  const max = Math.max(...data, 1);
-  const pts = data.map((v, i) => `${(i / (data.length - 1)) * 120},${26 - (v / max) * 22}`).join(' ');
+  const nums = data.map((v) => (Number.isFinite(v) ? v : 0));
+  const max = Math.max(...nums, 1);
+  const pts = nums.map((v, i) => `${(i / Math.max(1, nums.length - 1)) * 120},${26 - (v / max) * 22}`).join(' ');
   return <svg viewBox="0 0 120 28" preserveAspectRatio="none" className={cn('mt-1 h-7 w-full', className)} aria-hidden><polyline fill="none" stroke="var(--accent)" strokeWidth="1.5" points={pts} /></svg>;
 }
 
