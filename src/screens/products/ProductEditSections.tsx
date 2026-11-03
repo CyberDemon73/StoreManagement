@@ -16,6 +16,8 @@ import { Badge, Chip, ColorSwatch, Thumb } from '@/components/ui/Badge';
 import { KpiCard } from '@/components/ui/Card';
 import { VariantMatrix } from '@/components/app/VariantMatrix';
 import { BarcodeCaptureButton } from '@/components/app/BarcodeScanner';
+import { hexFromColorName } from '@/lib/color-name';
+import { colorChoices } from '@/lib/colors';
 import type { Brand, Category, ColorRef, Settings } from '@/types';
 import { type Derived, type FormErrors, type ProductFormState, type SectionCheck, variantSku } from './product-form';
 
@@ -122,22 +124,32 @@ export function VariantsSection({ form, set, errors, settings, showBarcodes = fa
   const [colorHex, setColorHex] = useState('#8A5B3C');
   const preset = presets.find((p) => p.name === presetName) ?? presets[0];
   const sizeOptions = [...new Set([...(preset?.sizes ?? []), ...form.sizes])];
-  const colorOptions: ColorRef[] = [...new Map([...(settings?.colorPresets ?? []), ...form.colors].map((c) => [c.name, c])).values()];
+  const colorOptions: ColorRef[] = colorChoices(settings?.colorPresets ?? [], form.colors);
+  const sameName = (a: ColorRef, b: ColorRef) => a.name.trim().toLowerCase() === b.name.trim().toLowerCase();
+  const isPicked = (c: ColorRef) => form.colors.some((x) => sameName(x, c));
   const toggleSize = (s: string) => set({ sizes: form.sizes.includes(s) ? form.sizes.filter((x) => x !== s) : [...form.sizes, s] });
-  const toggleColor = (c: ColorRef) => set({ colors: form.colors.some((x) => x.name === c.name) ? form.colors.filter((x) => x.name !== c.name) : [...form.colors, c] });
+  const toggleColor = (c: ColorRef) => set({ colors: isPicked(c) ? form.colors.filter((x) => !sameName(x, c)) : [...form.colors, c] });
   const hexOk = /^#[0-9a-fA-F]{6}$/.test(colorHex);
-  const addColor = () => { const n = colorName.trim(); if (!n || !hexOk || form.colors.some((c) => c.name.toLowerCase() === n.toLowerCase())) return; set({ colors: [...form.colors, { name: n, hex: colorHex }] }); setColorName(''); };
+  const addColor = () => {
+    const n = colorName.trim();
+    if (!n || !hexOk) return;
+    // A typed name that matches a known colour reuses it, so "red" and "Red" never become two variants.
+    const known = colorOptions.find((c) => sameName(c, { name: n, hex: colorHex }));
+    if (!isPicked(known ?? { name: n, hex: colorHex })) set({ colors: [...form.colors, known ?? { name: n, hex: colorHex }] });
+    setColorName('');
+    setShowCustomColor(false);
+  };
   const applyPreset = (name: string) => { setPresetName(name); const p = presets.find((x) => x.name === name); if (p) set({ sizes: [...p.sizes] }); };
   // keep matrix order stable: sizes in option order, colors in option order
   const orderedSizes = sizeOptions.filter((s) => form.sizes.includes(s));
-  const orderedColors = colorOptions.filter((c) => form.colors.some((x) => x.name === c.name));
-  const remainingColors = colorOptions.filter((c) => !form.colors.some((x) => x.name === c.name));
+  const orderedColors = colorOptions.filter(isPicked);
+  const remainingColors = colorOptions.filter((c) => !isPicked(c));
   const [showCustomColor, setShowCustomColor] = useState(false);
   const setBarcode = (key: string, code: string) => set({ barcodes: { ...(form.barcodes ?? {}), [key]: code } });
   return (
     <>
       <div className="grid gap-5 md:grid-cols-2">
-        <fieldset className="flex flex-col gap-2.5">
+        <fieldset className="flex min-w-0 flex-col gap-2.5">
           <legend className="mb-2 text-[13px] font-medium">Sizes{preset ? <span className="text-ink-2"> · preset “{preset.name}”</span> : null}</legend>
           <div className="flex flex-wrap gap-2">
             {sizeOptions.map((s) => <Chip key={s} selected={form.sizes.includes(s)} onClick={() => toggleSize(s)}>{s}</Chip>)}
@@ -147,7 +159,7 @@ export function VariantsSection({ form, set, errors, settings, showBarcodes = fa
           </div>
           {presets.length > 0 && <div className="flex flex-wrap items-center gap-1.5 text-xs text-ink-2"><span>Presets:</span>{presets.map((p) => <Chip key={p.name} size="sm" selected={p.name === presetName} onClick={() => applyPreset(p.name)}>{p.name}</Chip>)}</div>}
         </fieldset>
-        <fieldset className="flex flex-col gap-2.5">
+        <fieldset className="flex min-w-0 flex-col gap-2.5">
           <legend className="mb-2 text-[13px] font-medium">Colors</legend>
           <Select
             aria-label="Add a color"
@@ -159,17 +171,22 @@ export function VariantsSection({ form, set, errors, settings, showBarcodes = fa
               if (c) toggleColor(c);
             }}
           >
-            <option value="">{remainingColors.length ? 'Add a color…' : 'All preset colors added'}</option>
+            <option value="">{remainingColors.length ? 'Add a color…' : 'All colors added'}</option>
             {remainingColors.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
             <option value={CUSTOM_COLOR}>Custom color…</option>
           </Select>
           {orderedColors.length > 0 && (
             <div className="flex flex-wrap gap-2">{orderedColors.map((c) => <Chip key={c.name} selected onRemove={() => toggleColor(c)} aria-label={`Remove ${c.name}`} leading={<ColorSwatch hex={c.hex} name={c.name} />}>{c.name}</Chip>)}</div>
           )}
-          {showCustomColor && <div className="flex items-center gap-2">
-            <Input size="sm" aria-label="Custom color name" placeholder="Custom name" value={colorName} onChange={(e) => setColorName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addColor(); } }} wrapperClassName="flex-1" />
-            <Input size="sm" aria-label="Hex" value={colorHex} onChange={(e) => setColorHex(e.target.value)} wrapperClassName="w-28" className="tabular" invalid={!hexOk} leading={<ColorSwatch hex={hexOk ? colorHex : '#FFFFFF'} />} />
-            <Button size="sm" onClick={addColor} disabled={!colorName.trim() || !hexOk}>Add</Button>
+          {showCustomColor && <div className="flex min-w-0 flex-wrap items-center gap-2">
+            <Input size="sm" aria-label="Custom color name" placeholder="Color name, e.g. Red" value={colorName} onChange={(e) => { const v = e.target.value; setColorName(v); const hex = hexFromColorName(v); if (hex) setColorHex(hex); }} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addColor(); } }} wrapperClassName="min-w-0 basis-full" />
+            {/* The swatch IS the picker: tapping it opens the phone's native colour picker. */}
+            <label className="relative flex min-h-8 flex-1 cursor-pointer items-center gap-2 rounded-input border border-line bg-surface px-2.5 text-[13px] text-ink-2">
+              <ColorSwatch hex={hexOk ? colorHex : '#FFFFFF'} />
+              <span>Tap to change shade</span>
+              <input type="color" aria-label="Pick the shade" value={hexOk ? colorHex : '#8A5B3C'} onChange={(e) => setColorHex(e.target.value.toUpperCase())} className="absolute inset-0 size-full cursor-pointer opacity-0" />
+            </label>
+            <Button size="sm" variant="primary" onClick={addColor} disabled={!colorName.trim() || !hexOk}>Add color</Button>
           </div>}
         </fieldset>
       </div>

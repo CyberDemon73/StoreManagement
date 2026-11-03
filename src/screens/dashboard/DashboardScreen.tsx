@@ -3,7 +3,7 @@
  * Screen: /dashboard · Roles: ADMIN, MANAGER (analytics.read)
  * Calls: GET /analytics/dashboard?from&to (KPIs, trend, brand split, top products, low stock,
  * recent sales in one response).
- * Layout: KPI grid 4 cols on desktop, 2 on tablet, 2-row horizontal snap carousel on mobile.
+ * Layout: KPI grid 4 cols on desktop, 2 on tablet and phone.
  */
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -78,11 +78,9 @@ function Kpis({ d, loading }: { d: DashboardData | undefined; loading: boolean }
   ] : null;
   return (
     <>
-      {/* mobile: 2-row snap carousel */}
-      <section aria-label="Key figures" className="-mx-4 md:hidden">
-        <div className="scrollbar-none grid snap-x snap-mandatory auto-cols-[164px] grid-flow-col grid-rows-2 gap-2.5 overflow-x-auto px-4 pb-1">
-          {loading || !cards ? Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton h-24 rounded-card" />) : cards.map((c, i) => <div key={i} className={i % 2 === 0 ? 'snap-start' : ''}>{c}</div>)}
-        </div>
+      {/* mobile: two columns, every figure visible without sideways scrolling */}
+      <section aria-label="Key figures" className="grid grid-cols-2 gap-2.5 md:hidden">
+        {loading || !cards ? Array.from({ length: 8 }).map((_, i) => <div key={i} className="skeleton h-24 rounded-card" />) : cards.map((c, i) => <div key={i} className="min-w-0 [&>*]:h-full">{c}</div>)}
       </section>
       <section aria-label="Key figures" className="hidden gap-3 md:grid md:grid-cols-2 xl:grid-cols-4 xl:gap-4">
         {loading || !cards ? <SkeletonKpis count={8} /> : cards}

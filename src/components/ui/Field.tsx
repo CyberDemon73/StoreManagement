@@ -2,6 +2,7 @@
 import { forwardRef, useId, type InputHTMLAttributes, type ReactNode, type SelectHTMLAttributes, type TextareaHTMLAttributes } from 'react';
 import { ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { moneyInputText, parseMoneyInput } from '@/lib/money-input';
 
 /* ---------- Field wrapper: label + control + help/error ---------- */
 export interface FieldProps {
@@ -57,12 +58,13 @@ export interface MoneyInputProps extends Omit<InputProps, 'value' | 'onChange' |
 export function MoneyInput({ value, onChange, currency = 'EGP', ...rest }: MoneyInputProps) {
   return (
     <Input
-      inputMode="decimal"
+      inputMode="numeric"
+      pattern="[0-9]*"
       align="right"
+      placeholder="0"
       leading={<span className="text-xs">{currency}</span>}
-      value={value === undefined ? '' : (value / 100).toFixed(2)}
-      onChange={(e) => { const n = parseFloat(e.target.value.replace(/[^0-9.]/g, '')); onChange(Number.isFinite(n) ? Math.round(n * 100) : undefined); }}
-      onBlur={(e) => { const n = parseFloat(e.target.value); if (Number.isFinite(n)) onChange(Math.round(n * 100)); }}
+      value={moneyInputText(value)}
+      onChange={(e) => onChange(parseMoneyInput(e.target.value))}
       {...rest}
     />
   );
