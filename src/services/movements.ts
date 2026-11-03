@@ -1,10 +1,14 @@
 import { and, desc, eq, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { Db } from '@/db/client';
-import { products, purchases, stockCounts, stockMovements, users, variants } from '@/db/schema';
+import { alias } from 'drizzle-orm/pg-core';
+import { products, purchases, returns, sales, stockCounts, stockMovements, users, variants } from '@/db/schema';
 import type { MovementsQuery } from '@/schemas/movements';
 import { toMovement, type MovementJoinedRow, type StockMovementOut } from '@/serializers/movements';
 import type { Paginated } from './audit';
 import { escapeLike } from './products-list';
+
+// A return's label is the number of the sale it refunds, so `sales` is joined twice.
+const returnSales = alias(sales, 'return_sales');
 
 const movementFields = {
   id: stockMovements.id,
@@ -26,6 +30,8 @@ const movementFields = {
   productName: products.name,
   purchaseNumber: purchases.number,
   countNumber: stockCounts.number,
+  saleNumber: sales.number,
+  returnSaleNumber: returnSales.number,
 };
 
 /** Ledger ⋈ variants ⋈ products, left ⋈ users and the documents a reference can point at. */
@@ -37,7 +43,10 @@ function joined<E extends Record<string, SQL>>(db: Db, extra: E) {
     .innerJoin(products, eq(products.id, variants.productId))
     .leftJoin(users, eq(users.id, stockMovements.userId))
     .leftJoin(purchases, and(eq(stockMovements.referenceKind, 'purchase'), eq(purchases.id, stockMovements.referenceId)))
-    .leftJoin(stockCounts, and(eq(stockMovements.referenceKind, 'count'), eq(stockCounts.id, stockMovements.referenceId)));
+    .leftJoin(stockCounts, and(eq(stockMovements.referenceKind, 'count'), eq(stockCounts.id, stockMovements.referenceId)))
+    .leftJoin(sales, and(eq(stockMovements.referenceKind, 'sale'), eq(sales.id, stockMovements.referenceId)))
+    .leftJoin(returns, and(eq(stockMovements.referenceKind, 'return'), eq(returns.id, stockMovements.referenceId)))
+    .leftJoin(returnSales, eq(returnSales.id, returns.saleId));
 }
 
 const dayStart = (d: string) => new Date(`${d}T00:00:00.000Z`);

@@ -1,13 +1,15 @@
-import { and, eq, inArray, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { brands, products, returnItems, returns, saleItems, sales, users, variants, type SaleRow } from '@/db/schema';
 import { audit } from '@/lib/audit';
 import type { AuthUser, ReqCtx } from '@/lib/auth';
 import { AppError } from '@/lib/errors';
 import { can } from '@/lib/permissions';
-import type { SaleCreateInput } from '@/schemas/sales';
+import type { SaleCreateInput, SalesQuery } from '@/schemas/sales';
 import { toReturn, toSale, toSaleItem, type SaleOut } from '@/serializers/sales';
+import type { Paginated } from './audit';
 import { actorOf } from './products';
+import { escapeLike } from './products-list';
 import { computeTotals, sellerCapExceeded } from './sale-math';
 import { getSettings } from './settings';
 import { applyMovement, lockVariants, nextNumber } from './stock';
@@ -186,4 +188,67 @@ export async function getSale(db: Db, user: AuthUser, id: string): Promise<SaleO
     .limit(1);
   if (!row) return null;
   return loadSale(db, id);
+}
+
+const dayStart = (d: string) => new Date(`${d}T00:00:00.000Z`);
+
+/** Newest first. Sellers only ever see their own sales; a foreign `sellerId` is refused. */
+export async function listSales(db: Db, user: AuthUser, query: SalesQuery): Promise<Paginated<SaleOut>> {
+  const { page, pageSize, from, to, paymentMethod, status, q, productId } = query;
+  let sellerId = query.sellerId;
+  if (user.role === 'SELLER') {
+    if (sellerId && sellerId !== user.id) throw new AppError('FORBIDDEN', 'Sellers can only list their own sales');
+    sellerId = user.id;
+  }
+
+  const where: SQL[] = [];
+  if (sellerId) where.push(eq(sales.sellerId, sellerId));
+  if (paymentMethod) where.push(eq(sales.paymentMethod, paymentMethod));
+  if (status) where.push(eq(sales.status, status));
+  if (from) where.push(gte(sales.createdAt, dayStart(from)));
+  // `to` is inclusive: everything before the start of the following day.
+  if (to) where.push(lt(sales.createdAt, new Date(dayStart(to).getTime() + 86_400_000)));
+  if (q) {
+    const like = `%${escapeLike(q)}%`;
+    where.push(
+      sql`(${sales.number} ilike ${like} escape '\\'
+        or ${sales.customerName} ilike ${like} escape '\\'
+        or ${sales.customerPhone} ilike ${like} escape '\\')`,
+    );
+  }
+  if (productId) {
+    where.push(
+      exists(
+        db
+          .select({ one: sql`1` })
+          .from(saleItems)
+          .innerJoin(variants, eq(variants.id, saleItems.variantId))
+          .where(and(eq(saleItems.saleId, sales.id), eq(variants.productId, productId))),
+      ),
+    );
+  }
+  const whereExpr = where.length ? and(...where) : undefined;
+
+  const rows = await db
+    .select({ sale: sales, sellerName: users.name, total: sql<number>`count(*) over()::int` })
+    .from(sales)
+    .leftJoin(users, eq(users.id, sales.sellerId))
+    .where(whereExpr)
+    .orderBy(desc(sales.createdAt), desc(sales.id))
+    .limit(pageSize)
+    .offset((page - 1) * pageSize);
+
+  // Past the last page the window count has no row to ride on — count separately.
+  let total = rows[0]?.total ?? 0;
+  if (rows.length === 0 && page > 1) {
+    const [c] = await db.select({ n: sql<number>`count(*)::int` }).from(sales).where(whereExpr);
+    total = c?.n ?? 0;
+  }
+
+  const data = await loadSalesOut(
+    db,
+    rows.map((r) => r.sale),
+    new Map(rows.map((r) => [r.sale.id, r.sellerName])),
+  );
+  return { data, page, pageSize, total };
 }

@@ -4,6 +4,7 @@ import { GET as GET_PURCHASE } from '@/app/api/v1/stock/purchases/[id]/route';
 import { getDb } from '@/db/client';
 import { applyMovement } from '@/services/stock';
 import { call } from '../helpers/http';
+import { saleFixture } from '../helpers/sales';
 import { stockFixture } from '../helpers/stock';
 import { createUser, sessionCookieFor } from '../helpers/users';
 
@@ -114,5 +115,16 @@ describe('GET /stock/purchases/[id] params', () => {
     const res = await call(GET_PURCHASE, { path: '/api/v1/stock/purchases/abc', params: { id: 'abc' }, cookie });
     expect(res.status).toBe(400);
     expect((await res.json()).error.fields.id).toBeDefined();
+  });
+});
+
+describe('GET /stock/movements sale labels', () => {
+  it('labels SALE movements with the sale number', async () => {
+    const db = getDb();
+    const { manager } = await saleFixture(db);
+    const { status, body } = await list(await sessionCookieFor(db, manager.id), '?type=SALE');
+    expect(status).toBe(200);
+    expect(body.data).toHaveLength(2);
+    for (const m of body.data) expect(m.reference).toMatchObject({ kind: 'sale', label: 'AS-000001' });
   });
 });

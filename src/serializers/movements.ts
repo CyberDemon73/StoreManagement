@@ -41,6 +41,8 @@ export interface MovementJoinedRow {
   productName: string;
   purchaseNumber: string | null;
   countNumber: string | null;
+  saleNumber: string | null;
+  returnSaleNumber: string | null;
 }
 
 export function toMovement(r: MovementJoinedRow): StockMovementOut {
@@ -58,8 +60,13 @@ export function toMovement(r: MovementJoinedRow): StockMovementOut {
   if (r.unitCost !== null) out.unitCost = r.unitCost;
   if (r.reason !== null) out.reason = r.reason;
   if (r.referenceKind !== null && r.referenceId !== null) {
-    // Sales/returns get their labels in Sprint 3; until then the id stands in.
-    const label = r.referenceKind === 'purchase' ? r.purchaseNumber : r.referenceKind === 'count' ? r.countNumber : null;
+    const labels: Record<MovementReferenceKind, string | null> = {
+      purchase: r.purchaseNumber,
+      count: r.countNumber,
+      sale: r.saleNumber,
+      return: r.returnSaleNumber,
+    };
+    const label = labels[r.referenceKind];
     out.reference = { kind: r.referenceKind, id: r.referenceId, label: label ?? r.referenceId };
   }
   return out;
