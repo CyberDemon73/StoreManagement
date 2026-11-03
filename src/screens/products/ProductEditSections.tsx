@@ -75,7 +75,11 @@ export function ImagesSection({ form, set, tint }: Pick<SectionProps, 'form' | '
     if (accepted.length < files.length) setUploadError('Only JPG, PNG or WebP up to 4 MB are accepted.');
     const urls: string[] = [];
     for (const f of accepted) {
-      try { urls.push((await api.uploads.image(f)).url); } catch (e) { setUploadError((e as Error).message); }
+      try { urls.push((await api.uploads.image(f)).url); }
+      catch (e) {
+        const m = (e as Error).message;
+        setUploadError(/storage not configured/i.test(m) ? 'Image uploads are not configured on this server (missing BLOB_READ_WRITE_TOKEN). Add the token and try again.' : m);
+      }
     }
     if (urls.length) set({ images: [...form.images, ...urls] });
   };

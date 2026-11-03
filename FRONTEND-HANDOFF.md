@@ -97,13 +97,15 @@ Role rules live in two places only: `src/lib/nav.ts` (what is linked / which rou
 
 `src/lib/api.ts` decides per route whether to call the backend or the mock: `isLive(path)` is true for the prefixes in `LIVE_PREFIXES` (`/auth/`, `/setup`, `/products`, `/variants`, `/brands`, `/categories`, `/suppliers`, `/uploads`, `/stock`) and false for everything else, which still runs on the in-memory store. `NEXT_PUBLIC_USE_MOCK=1` forces the mock everywhere (demo without a database).
 
-**Live today (Sprints 0–2):** stock movements, adjustments, purchases, low stock and counts (`/stock/*`); plus sign-in / sign-out / `GET /auth/me` (the auth context confirms the cookie session on load; acting role and View-as-seller stay on the device), setup wizard (needs the server's `SETUP_TOKEN`), products list/detail/create/update/archive, variant create/update/lookup/search, brands / categories / suppliers, image upload (`POST /uploads`, multipart `file`, ≤ 4 MB).
+**Live today (Sprints 0–3):** sales, returns, parked sales and receipts (`/sales/*`); stock movements, adjustments, purchases, low stock and counts (`/stock/*`); plus sign-in / sign-out / `GET /auth/me` (the auth context confirms the cookie session on load; acting role and View-as-seller stay on the device), setup wizard (needs the server's `SETUP_TOKEN`), products list/detail/create/update/archive, variant create/update/lookup/search, brands / categories / suppliers, image upload (`POST /uploads`, multipart `file`, ≤ 4 MB).
 
-**Still mock:** sales + parked sales, analytics, users, settings (incl. CSV import preview), audit, notifications, labels data, `POST /me/password`, CSV exports. As each sprint lands, add its prefix to `LIVE_PREFIXES` (and remove any `MOCK_ONLY` exception), then check the response against `src/types.ts`.
+**Still mock:** analytics, users, settings (incl. CSV import preview), audit, notifications, labels data, `POST /me/password`, CSV exports. As each sprint lands, add its prefix to `LIVE_PREFIXES` (and remove any `MOCK_ONLY` exception), then check the response against `src/types.ts`.
 
 Things the client already does for the strict API: it `pick()`s only the keys each Zod body accepts (unknown keys are a 400), sends only `https://` image URLs, maps the login `403 FORBIDDEN` for a disabled account to `ACCOUNT_DISABLED` for the login screen, and adds `roles: [role]` to users because the API returns one role. Seller cost-field stripping happens server-side on live routes; `stripForSeller()` only runs on mock responses.
 
 Other notes:
+- Image uploads need `BLOB_READ_WRITE_TOKEN` in the server env (Vercel Blob). Without it, `POST /uploads` returns 500 `Storage not configured` and the Images section shows a clear message; the product can still be created without images.
+
 - Sprint 3 contract (sales): `discount.value` for type AMOUNT is in minor units; a seller over the cap gets `400` with `fields.discount` (keep the client preview); send an `Idempotency-Key` uuid per checkout attempt and reuse it on retry; sale numbers look like `AS-000001`.
 - Errors arrive as `{ error: { code, message, fields?, retryAfter? } }` → `ApiError`. `INSUFFICIENT_STOCK` (Sprint 3) must put `fields[variantId]` so the POS can mark lines; `LOCKED`/`RATE_LIMITED` send `retryAfter` seconds for the login countdown.
 - Every mutation sends `X-Requested-With: AvenueStock` and same-origin cookies, which the CSRF middleware requires.
