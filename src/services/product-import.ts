@@ -10,7 +10,8 @@ import { buildSku, defaultBaseSku, skuPart } from '@/lib/sku';
 import { DEFAULT_TINT } from '@/serializers/catalog';
 import { actorOf, mapUniqueViolation } from './products';
 import { getSettings } from './settings';
-import { applyMovement } from './stock';
+import { categoryPaths } from './product-export';
+import { applyInitialMovementsBulk, type InitialMovementInput } from './stock';
 
 export const MAX_IMPORT_BYTES = 2 * 1024 * 1024;
 export const MAX_IMPORT_ROWS = 5000;
@@ -62,12 +63,14 @@ export function decodeCsv(bytes: Uint8Array): string {
   }
 }
 
-// Undo our own export's formula neutralisation ("'=x" → "=x") so an export round-trips.
+// Undo exactly what lib/csv.ts toCsv() adds so an export round-trips: a "'" at the start before
+// optional spaces and = + - @ tab CR, and the same after a ';' ("x; '-1" → "x; -1").
 // The text is stored as data and neutralised again on every export.
 const NEUTRALISED = /^'(?=\s*[=+\-@\t\r])/;
+const NEUTRALISED_AFTER_SEMICOLON = /;(\s*)'([=+\-@\t\r])/g;
 
 function cleanCell(value: string | undefined): string {
-  return (value ?? '').trim().replace(NEUTRALISED, '');
+  return (value ?? '').trim().replace(NEUTRALISED_AFTER_SEMICOLON, ';$1$2').replace(NEUTRALISED, '').trim();
 }
 
 /** CSV text → header-mapped rows. Structural problems (columns, size, quoting) reject the whole file. */
@@ -100,11 +103,18 @@ interface ExistingProduct {
   id: string;
   baseSku: string;
   defaultCost: number | null;
+  categoryId: string;
+  status: 'ACTIVE' | 'ARCHIVED';
 }
 
 interface Context {
   brandByName: Map<string, string>;
+  /** Leaf name (lowercase) → ids; several when the same name sits under different parents. */
   categoriesByName: Map<string, string[]>;
+  /** "men/shirts" (lowercase, '/'-joined) → id. */
+  categoryByPath: Map<string, string>;
+  categoryPath: Map<string, string>;
+  allowNegativeStock: boolean;
   productByKey: Map<string, ExistingProduct>;
   baseSkus: Set<string>;
   variantKeys: Set<string>;
@@ -114,21 +124,34 @@ interface Context {
 }
 
 async function loadContext(db: Db): Promise<Context> {
-  const [brandRows, categoryRows, productRows, variantRows] = await Promise.all([
+  const [brandRows, categoryRows, productRows, variantRows, cfg] = await Promise.all([
     db.select({ id: brands.id, name: brands.name }).from(brands).orderBy(asc(brands.createdAt)),
-    db.select({ id: categories.id, name: categories.name }).from(categories),
+    db.select({ id: categories.id, name: categories.name, parentId: categories.parentId }).from(categories),
     db
-      .select({ id: products.id, name: products.name, brandId: products.brandId, baseSku: products.baseSku, defaultCost: products.defaultCost })
+      .select({
+        id: products.id,
+        name: products.name,
+        brandId: products.brandId,
+        baseSku: products.baseSku,
+        defaultCost: products.defaultCost,
+        categoryId: products.categoryId,
+        status: products.status,
+      })
       .from(products)
       .orderBy(asc(products.createdAt), asc(products.id)),
     db
       .select({ productId: variants.productId, size: variants.size, colorName: variants.colorName, colorHex: variants.colorHex, sku: variants.sku, barcode: variants.barcode })
       .from(variants)
       .orderBy(asc(variants.createdAt)),
+    getSettings(db),
   ]);
+  const categoryPath = categoryPaths(categoryRows);
   const ctx: Context = {
     brandByName: new Map(),
     categoriesByName: new Map(),
+    categoryByPath: new Map([...categoryPath].map(([id, path]) => [normalisePath(path), id])),
+    categoryPath,
+    allowNegativeStock: cfg.allowNegativeStock,
     productByKey: new Map(),
     baseSkus: new Set(productRows.map((p) => p.baseSku.toUpperCase())),
     variantKeys: new Set(variantRows.map((v) => variantKey(v.productId, v.size, v.colorName))),
@@ -143,10 +166,33 @@ async function loadContext(db: Db): Promise<Context> {
   }
   for (const p of productRows) {
     const key = productKey(p.brandId, p.name);
-    if (!ctx.productByKey.has(key)) ctx.productByKey.set(key, { id: p.id, baseSku: p.baseSku, defaultCost: p.defaultCost });
+    // An active product wins over an archived namesake.
+    const seen = ctx.productByKey.get(key);
+    if (!seen || (seen.status === 'ARCHIVED' && p.status === 'ACTIVE')) ctx.productByKey.set(key, p);
   }
   for (const v of variantRows) if (!ctx.hexByColor.has(v.colorName.toLowerCase())) ctx.hexByColor.set(v.colorName.toLowerCase(), v.colorHex);
   return ctx;
+}
+
+const normalisePath = (path: string) =>
+  path
+    .split('/')
+    .map((s) => s.trim().toLowerCase())
+    .join('/');
+
+/** Full path ("Men/Shirts", any case/spacing) or a leaf name that is unique in the catalogue. */
+function resolveCategory(text: string, ctx: Context): { id: string } | { error: string } {
+  if (text.includes('/')) {
+    const id = ctx.categoryByPath.get(normalisePath(text));
+    return id ? { id } : { error: 'Unknown category' };
+  }
+  const ids = ctx.categoriesByName.get(text.trim().toLowerCase()) ?? [];
+  if (ids.length === 0) return { error: 'Unknown category' };
+  if (ids.length > 1) {
+    const example = ids.map((id) => ctx.categoryPath.get(id) ?? '').sort()[0];
+    return { error: `Ambiguous category — use the full path, e.g. ${example}` };
+  }
+  return { id: ids[0]! };
 }
 
 const productKey = (brandId: string, name: string) => `${brandId}|${name.toLowerCase()}`;
@@ -190,6 +236,7 @@ function uniqueBaseSku(brandName: string, name: string, taken: Set<string>): str
 }
 
 const HEX = /^#[0-9a-fA-F]{6}$/;
+const MONEY_HINT = 'not a number (use 1090.50 — no thousands separators, at most 2 decimals)';
 
 function checkLength(value: string, label: string, max: number): string | null {
   if (!value) return `${label} is required`;
@@ -239,15 +286,12 @@ function planImport(rows: ParsedRow[], ctx: Context): Plan {
       fail('Category is required');
       continue;
     }
-    const categoryIds = ctx.categoriesByName.get(data.category.toLowerCase()) ?? [];
-    if (categoryIds.length === 0) {
-      fail('Unknown category');
+    const category = resolveCategory(data.category, ctx);
+    if ('error' in category) {
+      fail(category.error);
       continue;
     }
-    if (categoryIds.length > 1) {
-      fail('Ambiguous category (several share this name)');
-      continue;
-    }
+    const categoryId = category.id;
     if (!skuPart(size) || !skuPart(color)) {
       fail('Size and color need letters or digits');
       continue;
@@ -262,20 +306,20 @@ function planImport(rows: ParsedRow[], ctx: Context): Plan {
     }
     const price = parseMajor(data.price);
     if (price === null) {
-      fail('Price not a number');
+      fail(`Price ${MONEY_HINT}`);
       continue;
     }
     const cost = costText ? parseMajor(costText) : null;
     if (costText && cost === null) {
-      fail('Cost not a number');
+      fail(`Cost ${MONEY_HINT}`);
       continue;
     }
-    if (qtyText && !/^\d+$/.test(qtyText)) {
-      fail('Qty must be a whole number ≥ 0');
+    if (qtyText && !(ctx.allowNegativeStock ? /^-?\d+$/ : /^\d+$/).test(qtyText)) {
+      fail(ctx.allowNegativeStock ? 'Qty must be a whole number' : 'Qty must be a whole number ≥ 0');
       continue;
     }
     const qty = qtyText ? Number(qtyText) : 0;
-    if (qty > MAX_QTY) {
+    if (Math.abs(qty) > MAX_QTY) {
       fail(`Qty too large (max ${MAX_QTY.toLocaleString('en-US')})`);
       continue;
     }
@@ -286,15 +330,23 @@ function planImport(rows: ParsedRow[], ctx: Context): Plan {
 
     const key = productKey(brandId, name);
     const existing = ctx.productByKey.get(key);
+    if (existing?.status === 'ARCHIVED') {
+      fail('Product is archived — unarchive it first');
+      continue;
+    }
+    if (existing && existing.categoryId !== categoryId) {
+      fail(`Category differs from the existing product (${ctx.categoryPath.get(existing.categoryId) ?? 'unknown'})`);
+      continue;
+    }
     let group = groups.get(key);
     if (!group) {
       group = existing
-        ? { existingId: existing.id, name, brandId, categoryId: categoryIds[0]!, baseSku: existing.baseSku, defaultPrice: price, defaultCost: existing.defaultCost, variants: [] }
+        ? { existingId: existing.id, name, brandId, categoryId, baseSku: existing.baseSku, defaultPrice: price, defaultCost: existing.defaultCost, variants: [] }
         : {
             existingId: null,
             name,
             brandId,
-            categoryId: categoryIds[0]!,
+            categoryId,
             baseSku: uniqueBaseSku(brandNameById.get(brandId) ?? data.brand, name, ctx.baseSkus),
             defaultPrice: price,
             defaultCost: cost,
@@ -353,8 +405,8 @@ function chunks<T>(items: T[], size: number): T[][] {
 
 /**
  * Validate (and, unless dryRun, write) a product CSV. All-or-nothing: the commit re-validates
- * inside its transaction and writes only when every row is clean. Opening quantities go through
- * applyMovement() as INITIAL movements, like product creation.
+ * inside its transaction and writes only when every row is clean. Opening quantities are INITIAL
+ * movements booked in bulk (applyInitialMovementsBulk): the variants are created in this transaction.
  */
 export async function importProducts(db: Db, user: AuthUser, bytes: Uint8Array, opts: { dryRun: boolean }, reqCtx: ReqCtx): Promise<ImportOutcome> {
   const rows = parseImportCsv(decodeCsv(bytes));
@@ -398,6 +450,7 @@ export async function importProducts(db: Db, user: AuthUser, bytes: Uint8Array, 
       return p.variants.map((v) => ({ productId, v }));
     });
     let variantCount = 0;
+    const openings: InitialMovementInput[] = [];
     try {
       for (const batch of chunks(cells, INSERT_CHUNK)) {
         // clock_timestamp() keeps file order as matrix (createdAt) order within the transaction.
@@ -423,13 +476,14 @@ export async function importProducts(db: Db, user: AuthUser, bytes: Uint8Array, 
         const idBySku = new Map(inserted.map((r) => [r.sku, r.id]));
         for (const { v } of batch) {
           const variantId = idBySku.get(v.sku);
-          if (v.qty <= 0 || !variantId) continue;
-          await applyMovement(tx, { variantId, type: 'INITIAL', qtyDelta: v.qty, unitCost: v.costPrice, reason: 'CSV import', userId: user.id });
+          if (v.qty === 0 || !variantId) continue;
+          openings.push({ variantId, qty: v.qty, unitCost: v.costPrice, note: 'CSV import', userId: user.id });
         }
       }
     } catch (err) {
       mapUniqueViolation(err);
     }
+    await applyInitialMovementsBulk(tx, openings);
 
     const created = { products: fresh.length, variants: variantCount };
     await audit(tx, actorOf(user, reqCtx), 'products.import', 'product', null, null, {

@@ -1,4 +1,4 @@
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { brands, categories, products, variants } from '@/db/schema';
 import { toCsv } from '@/lib/csv';
@@ -9,33 +9,62 @@ export const EXPORT_COLUMNS = ['name', 'brand', 'category', 'size', 'color', 'co
 
 export type ProductExportRow = Record<(typeof EXPORT_COLUMNS)[number], string | number>;
 
-/** One row per active variant, in catalogue order (brand, product, matrix order). */
+/**
+ * id → "Parent/Child/…" by walking parentId to the root. A leaf name alone is ambiguous once two
+ * parents share it (Men/Shirts, Women/Shirts); the depth guard stops a corrupt parent cycle.
+ */
+export function categoryPaths(rows: { id: string; name: string; parentId: string | null }[]): Map<string, string> {
+  const byId = new Map(rows.map((r) => [r.id, r]));
+  const out = new Map<string, string>();
+  for (const r of rows) {
+    const parts: string[] = [];
+    let at: typeof r | undefined = r;
+    for (let depth = 0; at && depth < 32; depth++) {
+      parts.unshift(at.name);
+      at = at.parentId ? byId.get(at.parentId) : undefined;
+    }
+    out.set(r.id, parts.join('/'));
+  }
+  return out;
+}
+
+/** One row per active variant of an ACTIVE product, in catalogue order (brand, product, matrix order). */
 export async function productExportRows(db: Db): Promise<ProductExportRow[]> {
-  const rows = await db
-    .select({
-      name: products.name,
-      brand: brands.name,
-      category: categories.name,
-      size: variants.size,
-      color: variants.colorName,
-      colorHex: variants.colorHex,
-      price: variants.sellPrice,
-      cost: variants.costPrice,
-      qty: variants.quantity,
-      barcode: variants.barcode,
-      sku: variants.sku,
-    })
-    .from(variants)
-    .innerJoin(products, eq(products.id, variants.productId))
-    .innerJoin(brands, eq(brands.id, products.brandId))
-    .innerJoin(categories, eq(categories.id, products.categoryId))
-    .where(eq(variants.isActive, true))
-    .orderBy(asc(brands.name), asc(products.name), asc(products.id), asc(variants.createdAt), asc(variants.id));
-  return rows.map((r) => ({
-    ...r,
+  const [rows, categoryRows] = await Promise.all([
+    db
+      .select({
+        name: products.name,
+        brand: brands.name,
+        categoryId: products.categoryId,
+        size: variants.size,
+        color: variants.colorName,
+        colorHex: variants.colorHex,
+        price: variants.sellPrice,
+        cost: variants.costPrice,
+        qty: variants.quantity,
+        barcode: variants.barcode,
+        sku: variants.sku,
+      })
+      .from(variants)
+      .innerJoin(products, eq(products.id, variants.productId))
+      .innerJoin(brands, eq(brands.id, products.brandId))
+      .where(and(eq(variants.isActive, true), eq(products.status, 'ACTIVE')))
+      .orderBy(asc(brands.name), asc(products.name), asc(products.id), asc(variants.createdAt), asc(variants.id)),
+    db.select({ id: categories.id, name: categories.name, parentId: categories.parentId }).from(categories),
+  ]);
+  const paths = categoryPaths(categoryRows);
+  return rows.map(({ categoryId, ...r }) => ({
+    name: r.name,
+    brand: r.brand,
+    category: paths.get(categoryId) ?? '',
+    size: r.size,
+    color: r.color,
+    colorHex: r.colorHex,
     price: formatMajor(r.price),
     cost: r.cost == null ? '' : formatMajor(r.cost),
+    qty: r.qty,
     barcode: r.barcode ?? '',
+    sku: r.sku,
   }));
 }
 

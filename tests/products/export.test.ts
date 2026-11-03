@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { GET } from '@/app/api/v1/products/export/route';
 import { POST as IMPORT } from '@/app/api/v1/products/import/route';
 import { getDb } from '@/db/client';
+import { brands, categories } from '@/db/schema';
 import { createProductDirect, createVariantDirect, seedCatalog } from '../helpers/catalog';
 import { call } from '../helpers/http';
 import { createUser, sessionCookieFor } from '../helpers/users';
@@ -73,6 +74,62 @@ describe('GET /products/export', () => {
     const fresh = await upload();
     expect(fresh.status).toBe(200);
     expect(await fresh.json()).toEqual({ rows: 3, ok: 3, errors: [] });
+  });
+
+  it('writes the category path (any depth) and round-trips Men/Shirts vs Women/Shirts into a truncated catalogue', async () => {
+    const db = getDb();
+    const [brand] = await db.insert(brands).values({ name: 'Northline' }).returning();
+    const [men] = await db.insert(categories).values({ name: 'Men' }).returning();
+    const [women] = await db.insert(categories).values({ name: 'Women' }).returning();
+    const [menShirts] = await db.insert(categories).values({ name: 'Shirts', parentId: men!.id }).returning();
+    const [womenShirts] = await db.insert(categories).values({ name: 'Shirts', parentId: women!.id }).returning();
+    const [formal] = await db.insert(categories).values({ name: 'Formal', parentId: menShirts!.id }).returning();
+    const specs = [
+      { name: 'Oxford', categoryId: menShirts!.id, sku: 'NO-OXF' },
+      { name: 'Blouse', categoryId: womenShirts!.id, sku: 'NO-BLO' },
+      { name: 'Dress Shirt', categoryId: formal!.id, sku: 'NO-DRS' },
+    ];
+    for (const s of specs) {
+      const p = await createProductDirect(db, { name: s.name, baseSku: s.sku, brandId: brand!.id, categoryId: s.categoryId, defaultPrice: 100 });
+      await createVariantDirect(db, { productId: p.id, size: 'M', colorName: 'White', sku: `${s.sku}-M-WHITE`, sellPrice: 100 });
+    }
+    const user = await createUser(db, { role: 'MANAGER' });
+    const cookie = await sessionCookieFor(db, user.id);
+    const csv = await (await exportCsv(cookie)).text();
+    const parsed = Papa.parse<Record<string, string>>(csv.replace(/^﻿/, ''), { header: true, skipEmptyLines: true });
+    expect(Object.fromEntries(parsed.data.map((r) => [r['name'], r['category']]))).toEqual({ Oxford: 'Men/Shirts', Blouse: 'Women/Shirts', 'Dress Shirt': 'Men/Shirts/Formal' });
+
+    await db.execute(sql`truncate stock_movements, variants, products cascade`);
+    const form = new FormData();
+    form.append('file', new File([csv], 'products.csv', { type: 'text/csv' }));
+    const res = await call(IMPORT, { method: 'POST', path: '/api/v1/products/import?dryRun=1', cookie, form });
+    expect(await res.json()).toEqual({ rows: 3, ok: 3, errors: [] });
+  });
+
+  it('exports only ACTIVE products', async () => {
+    const { db, cookie } = await fixture();
+    const [brand] = await db.select().from(brands);
+    const [category] = await db.select().from(categories);
+    const old = await createProductDirect(db, { name: 'Old Tee', baseSku: 'NO-OLD', brandId: brand!.id, categoryId: category!.id, defaultPrice: 100, status: 'ARCHIVED' });
+    await createVariantDirect(db, { productId: old.id, size: 'M', colorName: 'Black', sku: 'NO-OLD-M-BLACK', sellPrice: 100 });
+    const text = await (await exportCsv(cookie)).text();
+    expect(text).not.toContain('NO-OLD-M-BLACK');
+  });
+
+  it('round-trips a name neutralised after ";" — re-import matches the same product', async () => {
+    const { db, cookie } = await fixture();
+    const [brand] = await db.select().from(brands);
+    const [category] = await db.select().from(categories);
+    const tee = await createProductDirect(db, { name: 'Tee; -20%', baseSku: 'NO-TEE', brandId: brand!.id, categoryId: category!.id, defaultPrice: 100 });
+    await createVariantDirect(db, { productId: tee.id, size: 'M', colorName: 'Black', sku: 'NO-TEE-M-BLACK', sellPrice: 100 });
+    const csv = await (await exportCsv(cookie)).text();
+    expect(csv).toContain(`"Tee; '-20%"`);
+    const form = new FormData();
+    form.append('file', new File([csv], 'products.csv', { type: 'text/csv' }));
+    const body = await (await call(IMPORT, { method: 'POST', path: '/api/v1/products/import?dryRun=1', cookie, form })).json();
+    const teeRow = body.errors.find((e: { data: { name: string } }) => e.data.name === 'Tee; -20%');
+    expect(teeRow?.message).toBe('Variant already exists');
+    expect(body.ok).toBe(0);
   });
 
   it('rejects unknown query keys with 400 and SELLER with 403', async () => {

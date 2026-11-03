@@ -1,11 +1,19 @@
 import { count, eq, sql } from 'drizzle-orm';
-import { describe, expect, it } from 'vitest';
-import { POST } from '@/app/api/v1/products/import/route';
+import { describe, expect, it, vi } from 'vitest';
+import { maxDuration, POST } from '@/app/api/v1/products/import/route';
 import { getDb } from '@/db/client';
-import { auditLog, products, stockMovements, variants } from '@/db/schema';
+import { auditLog, categories, products, settings, stockMovements, variants } from '@/db/schema';
+import { applyMovement } from '@/services/stock';
+import { verifyStock } from '@/services/stock-verify';
 import { createProductDirect, createVariantDirect, seedCatalog } from '../helpers/catalog';
 import { call } from '../helpers/http';
 import { createUser, sessionCookieFor } from '../helpers/users';
+
+// Spy on the per-row ledger path: a bulk import must not fall back to one applyMovement per row.
+vi.mock('@/services/stock', async (importOriginal) => {
+  const mod = await importOriginal<typeof import('@/services/stock')>();
+  return { ...mod, applyMovement: vi.fn(mod.applyMovement) };
+});
 
 const HEADER = 'name,brand,category,size,color,colorHex,price,cost,qty,barcode';
 
@@ -68,7 +76,7 @@ describe('POST /products/import?dryRun=1', () => {
     const byRow = Object.fromEntries(body.errors.map((e: { row: number; message: string }) => [e.row, e.message]));
     expect(byRow).toEqual({
       2: 'Unknown brand',
-      3: 'Price not a number',
+      3: 'Price not a number (use 1090.50 — no thousands separators, at most 2 decimals)',
       4: 'Variant already exists',
       5: 'Unknown category',
       7: 'Duplicate variant in file',
@@ -132,6 +140,76 @@ describe('POST /products/import?dryRun=1', () => {
     expect((await unknown.json()).error.fields.force).toBe('Unknown field');
   });
 
+  it('rejects an upload over 2 MB sent without a content-length header (chunked) with 400', async () => {
+    const { cookie } = await fixture();
+    const encoded = new Response(csvForm(HEADER + '\n' + 'x'.repeat(2 * 1024 * 1024 + 10)));
+    const req = new Request('http://localhost:3000/api/v1/products/import?dryRun=1', {
+      method: 'POST',
+      headers: {
+        origin: 'http://localhost:3000',
+        'x-requested-with': 'AvenueStock',
+        'x-forwarded-for': '203.0.113.10',
+        'user-agent': 'vitest',
+        cookie,
+        'content-type': encoded.headers.get('content-type')!,
+      },
+      body: encoded.body,
+      duplex: 'half',
+    } as RequestInit);
+    expect(req.headers.get('content-length')).toBeNull();
+    const res = await POST(req, { params: Promise.resolve({}) });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields.file).toMatch(/2 MB/);
+  });
+
+  it('price/cost errors explain the expected format', async () => {
+    const { cookie } = await fixture();
+    const res = await upload(cookie, [HEADER, 'A,Northline,Tops,M,Black,,"1,090.50",,,', 'B,Northline,Tops,M,Black,,10,1.234,,'].join('\n'));
+    const body = await res.json();
+    expect(body.errors.map((e: { message: string }) => e.message)).toEqual([
+      'Price not a number (use 1090.50 — no thousands separators, at most 2 decimals)',
+      'Cost not a number (use 1090.50 — no thousands separators, at most 2 decimals)',
+    ]);
+  });
+
+  it('rejects a row matching an archived product', async () => {
+    const { db, brand, category, cookie } = await fixture();
+    await createProductDirect(db, { name: 'Old Tee', baseSku: 'NO-OLD', brandId: brand.id, categoryId: category.id, defaultPrice: 100, status: 'ARCHIVED' });
+    const body = await (await upload(cookie, [HEADER, 'old tee,Northline,Tops,M,Black,,10,,,'].join('\n'))).json();
+    expect(body.errors).toEqual([expect.objectContaining({ row: 2, message: 'Product is archived — unarchive it first' })]);
+  });
+
+  it('rejects a row whose category differs from the existing product', async () => {
+    const { db, brand, category, cookie } = await fixture();
+    await db.insert(categories).values({ name: 'Bottoms' });
+    await createProductDirect(db, { name: 'Chino Slim', baseSku: 'NO-CHI', brandId: brand.id, categoryId: category.id, defaultPrice: 100 });
+    const body = await (await upload(cookie, [HEADER, 'Chino Slim,Northline,Bottoms,40,Sand,,10,,,'].join('\n'))).json();
+    expect(body.errors).toEqual([expect.objectContaining({ row: 2, message: 'Category differs from the existing product (Tops)' })]);
+  });
+
+  it('resolves categories by full path (case-insensitive, trimmed) or by a unique leaf; an ambiguous leaf is a row error', async () => {
+    const { db, cookie } = await fixture();
+    const [men] = await db.insert(categories).values({ name: 'Men' }).returning();
+    const [women] = await db.insert(categories).values({ name: 'Women' }).returning();
+    await db.insert(categories).values([
+      { name: 'Shirts', parentId: men!.id },
+      { name: 'Shirts', parentId: women!.id },
+      { name: 'Coats', parentId: women!.id },
+    ]);
+    const text = [
+      HEADER,
+      'A,Northline,Shirts,M,Black,,10,,,', // ambiguous leaf
+      'B,Northline, men / SHIRTS ,M,Black,,10,,,', // full path
+      'C,Northline,coats,M,Black,,10,,,', // unique leaf
+      'D,Northline,Men/Coats,M,Black,,10,,,', // no such path
+    ].join('\n');
+    const body = await (await upload(cookie, text)).json();
+    expect(body.errors.map((e: { row: number; message: string }) => [e.row, e.message])).toEqual([
+      [2, 'Ambiguous category — use the full path, e.g. Men/Shirts'],
+      [5, 'Unknown category'],
+    ]);
+  });
+
   it('is forbidden for SELLER', async () => {
     const { cookie } = await fixture('SELLER');
     const res = await upload(cookie, VALID);
@@ -193,6 +271,38 @@ describe('POST /products/import (commit)', () => {
     const audits = await db.select().from(auditLog).where(eq(auditLog.action, 'products.import'));
     expect(audits).toHaveLength(1);
     expect(audits[0]!.after).toMatchObject({ rows: 3, created: { products: 1, variants: 3 } });
+  });
+
+  it('negative opening qty is a row error unless settings.allowNegativeStock, then booked as INITIAL', async () => {
+    const { db, cookie } = await fixture();
+    const text = [HEADER, 'Neg Tee,Northline,Tops,M,Black,,10,,-2,'].join('\n');
+    const denied = await (await upload(cookie, text)).json();
+    expect(denied.errors).toEqual([expect.objectContaining({ row: 2, message: 'Qty must be a whole number ≥ 0' })]);
+
+    await db.insert(settings).values({ allowNegativeStock: true }).onConflictDoUpdate({ target: settings.id, set: { allowNegativeStock: true } });
+    const res = await upload(cookie, text, '');
+    expect(res.status).toBe(201);
+    const [v] = await db.select().from(variants);
+    expect(v!.quantity).toBe(-2);
+    expect(await db.select({ d: stockMovements.qtyDelta, a: stockMovements.qtyAfter }).from(stockMovements)).toEqual([{ d: -2, a: -2 }]);
+  });
+
+  it('commits 5,000 rows with bulk opening stock (no per-row applyMovement) and a consistent ledger', { timeout: 120_000 }, async () => {
+    const { db, cookie } = await fixture();
+    expect(maxDuration).toBe(60);
+    const lines = [HEADER];
+    for (let i = 0; i < 5000; i++) lines.push(`P${Math.floor(i / 5)},Northline,Tops,S${i % 5},Black,,10,4,${(i % 3) + 1},`);
+    vi.mocked(applyMovement).mockClear();
+    const started = Date.now();
+    const res = await upload(cookie, lines.join('\n'), '');
+    const elapsed = Date.now() - started;
+    expect(res.status).toBe(201);
+    expect((await res.json()).created).toEqual({ products: 1000, variants: 5000 });
+    expect(vi.mocked(applyMovement)).not.toHaveBeenCalled();
+    expect(await verifyStock(db)).toEqual({ ok: true, mismatches: [] });
+    const [m] = await db.select({ n: count() }).from(stockMovements);
+    expect(m!.n).toBe(5000);
+    expect(elapsed).toBeLessThan(60_000);
   });
 
   it('rejects a barcode already used by another variant', async () => {

@@ -11,6 +11,8 @@ const MULTIPART_OVERHEAD = 64 * 1024;
 const TOO_LARGE = 'File too large (max 2 MB)';
 
 export const runtime = 'nodejs';
+// A 5,000-row commit (bulk inserts + bulk opening stock) needs more than the 10 s Hobby default.
+export const maxDuration = 60;
 
 /**
  * POST /products/import[?dryRun=1] — multipart field `file` (CSV).
