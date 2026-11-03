@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { GET } from '@/app/api/v1/stock/movements/route';
+import { GET as GET_PURCHASE } from '@/app/api/v1/stock/purchases/[id]/route';
 import { getDb } from '@/db/client';
 import { applyMovement } from '@/services/stock';
 import { call } from '../helpers/http';
@@ -95,5 +96,23 @@ describe('GET /stock/movements', () => {
     expect((await call(GET, { path: '/api/v1/stock/movements' })).status).toBe(401);
     expect((await list(cookie, '?pageSize=500')).status).toBe(400);
     expect((await list(cookie, '?foo=1')).status).toBe(400);
+  });
+});
+
+describe('movements date validation', () => {
+  it('rejects non-calendar dates and accepts real ones', async () => {
+    const { cookie } = await fixture();
+    expect((await list(cookie, '?from=2026-13-40')).status).toBe(400);
+    expect((await list(cookie, '?from=2026-02-30')).status).toBe(400);
+    expect((await list(cookie, '?from=2026-02-28')).status).toBe(200);
+  });
+});
+
+describe('GET /stock/purchases/[id] params', () => {
+  it('returns 400 with fields.id for a non-uuid id', async () => {
+    const { cookie } = await fixture();
+    const res = await call(GET_PURCHASE, { path: '/api/v1/stock/purchases/abc', params: { id: 'abc' }, cookie });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields.id).toBeDefined();
   });
 });

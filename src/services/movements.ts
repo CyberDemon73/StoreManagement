@@ -60,7 +60,7 @@ export async function listMovements(db: Db, query: MovementsQuery): Promise<Pagi
 
   const rows = await joined(db, { total: sql<number>`count(*) over()::int` })
     .where(whereExpr)
-    .orderBy(desc(stockMovements.createdAt), desc(stockMovements.id))
+    .orderBy(desc(stockMovements.createdAt), desc(stockMovements.seq))
     .limit(pageSize)
     .offset((page - 1) * pageSize);
 

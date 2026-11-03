@@ -154,8 +154,32 @@ export async function applyCount(db: Db, user: AuthUser, id: string, input: Coun
       tx,
       targets.map((t) => t.variantId),
     );
+    // Re-check eligibility under the lock: variants deactivated (or products archived) since the snapshot are skipped.
+    const eligibleRows =
+      targets.length === 0
+        ? []
+        : await tx
+            .select({ id: variants.id })
+            .from(variants)
+            .innerJoin(products, eq(products.id, variants.productId))
+            .where(
+              and(
+                inArray(
+                  variants.id,
+                  targets.map((t) => t.variantId),
+                ),
+                eq(variants.isActive, true),
+                eq(products.status, 'ACTIVE'),
+              ),
+            );
+    const eligible = new Set(eligibleRows.map((r) => r.id));
+    const skipped: string[] = [];
     let movements = 0;
     for (const t of targets) {
+      if (!eligible.has(t.variantId)) {
+        skipped.push(t.variantId);
+        continue;
+      }
       const current = live.get(t.variantId);
       if (!current) throw new AppError('NOT_FOUND', 'Variant not found');
       const delta = t.countedQty - current.quantity;
@@ -173,7 +197,7 @@ export async function applyCount(db: Db, user: AuthUser, id: string, input: Coun
     }
     const now = new Date();
     await tx.update(stockCounts).set({ status: 'APPLIED', appliedAt: now, appliedBy: user.id }).where(eq(stockCounts.id, id));
-    await audit(tx, actorOf(user, ctx), 'count.apply', 'stock_count', id, { status: 'OPEN' }, { status: 'APPLIED', uncountedAsZero: !!input.uncountedAsZero, movements });
+    await audit(tx, actorOf(user, ctx), 'count.apply', 'stock_count', id, { status: 'OPEN' }, { status: 'APPLIED', uncountedAsZero: !!input.uncountedAsZero, movements, skipped });
   });
   return getCount(db, id);
 }

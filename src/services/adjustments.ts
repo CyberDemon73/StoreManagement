@@ -36,7 +36,7 @@ export async function createAdjustments(db: Db, user: AuthUser, input: Adjustmen
       created.push(result.movementId);
       booked.push({ variantId: item.variantId, qtyDelta: delta, reason: item.reason });
     }
-    await audit(tx, actorOf(user, ctx), 'stock.adjust', 'variant', null, null, { items: booked });
+    if (created.length > 0) await audit(tx, actorOf(user, ctx), 'stock.adjust', 'variant', null, null, { items: booked });
     return created;
   });
   return loadMovements(db, ids);

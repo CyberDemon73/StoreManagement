@@ -139,3 +139,18 @@ describe('ledger extensions (sprint 2)', () => {
     expect(await db.transaction((tx) => nextNumber(tx, 'SC'))).toBe('SC-000001');
   });
 });
+
+describe('applyMovement int4 lower bound', () => {
+  it('rejects quantity below -2^31 with VALIDATION', async () => {
+    const { db, variantId } = await fixture();
+    await db.insert(settings).values({ allowNegativeStock: true });
+    await db.transaction((tx) => applyMovement(tx, { variantId, type: 'INITIAL', qtyDelta: -2_147_483_647, userId: null }));
+    let err: unknown;
+    try {
+      await db.transaction((tx) => applyMovement(tx, { variantId, type: 'SALE', qtyDelta: -100, userId: null }));
+    } catch (e) {
+      err = e;
+    }
+    expect((err as AppError).code).toBe('VALIDATION');
+  });
+});

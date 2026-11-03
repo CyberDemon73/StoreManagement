@@ -81,7 +81,7 @@ export async function createPurchase(db: Db, user: AuthUser, input: PurchaseInpu
     throw new AppError('VALIDATION', 'Invalid input', { fields: { items: 'Purchase total out of range' } });
   }
 
-  const id = await db.transaction(async (tx) => {
+  return db.transaction(async (tx) => {
     await lockVariants(
       tx,
       input.items.map((i) => i.variantId),
@@ -123,8 +123,6 @@ export async function createPurchase(db: Db, user: AuthUser, input: PurchaseInpu
 
     const out = await getPurchase(tx, row.id);
     await audit(tx, actorOf(user, ctx), 'purchase.create', 'purchase', row.id, null, out);
-    return row.id;
+    return out;
   });
-
-  return getPurchase(db, id);
 }

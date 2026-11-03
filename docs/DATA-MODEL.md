@@ -47,20 +47,20 @@ variants
 ## stock
 ```
 stock_movements   -- immutable; never UPDATE or DELETE. Live since Sprint 1 (applyMovement in src/services/stock.ts)
-  id, variant_id fk, type enum(INITIAL,PURCHASE,SALE,RETURN,ADJUSTMENT),
-  qty_delta int not null (sign matters), unit_cost int null,
+  id, seq bigint generated always as identity (insertion order), variant_id fk, type enum(INITIAL,PURCHASE,SALE,RETURN,ADJUSTMENT),
+  qty_delta int not null (sign matters), qty_after int not null (variant quantity after this row), unit_cost int null,
   reference_kind enum(sale,purchase,return,count) null, reference_id uuid null,
   reason text null, user_id fk, created_at
   index(variant_id, created_at desc), index(reference_kind, reference_id), index(created_at)
 
 purchases
-  id, supplier_id fk null, invoice_ref text, total int, received_at timestamptz, note text,
+  id, number text unique (PO-000001, allocated from sale_counters prefix PO), supplier_id fk null, invoice_ref text, total int, received_at timestamptz, note text,
   created_by fk, created_at
 purchase_items
   id, purchase_id fk, variant_id fk, qty int, unit_cost int
 
 stock_counts
-  id, status enum(OPEN,APPLIED,CANCELLED), started_by fk, started_at, applied_at, applied_by fk, note
+  id, number text unique (SC-000001), scope text default 'all', status enum(OPEN,APPLIED,CANCELLED), started_by fk, started_at, applied_at, applied_by fk, note
 stock_count_items
   id, count_id fk, variant_id fk, system_qty int (snapshot at start), counted_qty int null, counted_by fk, counted_at
   unique(count_id, variant_id)
@@ -75,7 +75,8 @@ sales
   payment_method enum(CASH,CARD,WALLET,TRANSFER),
   status enum(COMPLETED,PARTIALLY_REFUNDED,REFUNDED,VOID) default COMPLETED,
   customer_name text, customer_phone text, note text,
-  idempotency_key text unique null, voided_at, voided_by fk, void_reason text,
+  -- idempotency handled by idempotency_keys table (see system)
+  voided_at, voided_by fk, void_reason text,
   created_at
   index(created_at), index(seller_id, created_at), index(status)
 sale_items
@@ -108,10 +109,15 @@ audit_log
 notifications
   id, user_id fk null (null = all managers), kind enum(LOW_STOCK,LARGE_REFUND,NEW_DEVICE_LOGIN),
   payload jsonb, read_at, created_at
+
+idempotency_keys
+  user_id fk, route text, key text, request_hash text, status int (0 = in progress), response jsonb, created_at
+  pk(user_id, route, key), index(created_at)
 ```
 
 ## Derived rules
 - `variants.quantity` **must equal** `Σ stock_movements.qty_delta` for that variant. `pnpm stock:verify` asserts it.
+- The last `qty_after` per variant (by `seq`) == `variants.quantity`.
 - Weighted-average cost on PURCHASE/INITIAL: `new_cost = round((old_qty*old_cost + in_qty*in_cost) / (old_qty+in_qty))`. SALE/RETURN/ADJUSTMENT do not change cost (RETURN with restock uses the snapshot cost from the sale item).
 - Gross profit for a period = `Σ sale_items(line_total − unit_cost*qty)` for sales in period with status ≠ VOID, minus `Σ returns.refund_amount` adjusted by restocked cost (returned item cost comes back into stock, so profit impact = refund − unit_cost*qty for restocked lines; = refund for non-restocked).
 - "Low stock" = `quantity > 0 AND quantity <= low_stock_threshold`; "out" = `quantity <= 0`.

@@ -51,6 +51,7 @@ describe('POST /stock/adjustments', () => {
     expect(body).toEqual([]);
     expect(await adjustmentRows()).toHaveLength(0);
     expect(await qtyOf(a.id)).toBe(10);
+    expect(await getDb().select().from(auditLog).where(eq(auditLog.action, 'stock.adjust'))).toHaveLength(0);
   });
 
   it('computes the delta from newQty (B: 5 -> 2 is -3) and tracks running quantity within one request', async () => {

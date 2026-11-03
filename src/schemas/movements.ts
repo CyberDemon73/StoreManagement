@@ -2,7 +2,13 @@ import { z } from 'zod';
 import { paginationQuery, uuidSchema } from './common';
 import { INT4_MAX } from './products';
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD');
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD')
+  .refine((d) => {
+    const t = new Date(d + 'T00:00:00Z');
+    return !Number.isNaN(t.getTime()) && t.toISOString().startsWith(d);
+  }, 'Invalid date');
 
 export const movementTypes = ['INITIAL', 'PURCHASE', 'SALE', 'RETURN', 'ADJUSTMENT'] as const;
 

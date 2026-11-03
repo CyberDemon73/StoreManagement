@@ -43,7 +43,7 @@ export async function applyMovement(tx: Db, input: MovementInput): Promise<Movem
   if (!current) throw new AppError('NOT_FOUND', 'Variant not found');
 
   const newQty = current.quantity + input.qtyDelta;
-  if (newQty > 2_147_483_647) {
+  if (newQty > 2_147_483_647 || newQty < -2_147_483_648) {
     throw new AppError('VALIDATION', 'Quantity out of range', { fields: { qtyDelta: 'Out of range' } });
   }
   if (newQty < 0) {
@@ -100,8 +100,15 @@ export interface LockedVariant {
 export async function lockVariants(tx: Db, ids: string[]): Promise<Map<string, LockedVariant>> {
   const unique = [...new Set(ids)].sort();
   if (unique.length === 0) return new Map();
+  // Lock one row at a time in JS-sorted order so the acquisition order is a hard guarantee.
+  for (const id of unique) {
+    await tx.execute(sql`select id from variants where id = ${id} for update`);
+  }
   const result = (await tx.execute(
-    sql`select id, quantity, cost_price from variants where id = any(${sql.raw(`array[${unique.map((id) => `'${id.replace(/'/g, "''")}'`).join(',')}]::uuid[]`)}) order by id for update`,
+    sql`select id, quantity, cost_price from variants where id = any(array[${sql.join(
+      unique.map((id) => sql`${id}`),
+      sql`, `,
+    )}]::uuid[]) order by id for update`,
   )) as { rows: { id: string; quantity: number; cost_price: number | null }[] };
   const map = new Map<string, LockedVariant>();
   for (const r of result.rows) map.set(r.id, { quantity: Number(r.quantity), costPrice: r.cost_price == null ? null : Number(r.cost_price) });

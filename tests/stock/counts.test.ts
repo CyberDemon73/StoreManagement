@@ -5,7 +5,7 @@ import { POST as CANCEL } from '@/app/api/v1/stock/counts/[id]/cancel/route';
 import { GET as GET_ONE, PATCH } from '@/app/api/v1/stock/counts/[id]/route';
 import { GET as LIST, POST as START } from '@/app/api/v1/stock/counts/route';
 import { getDb } from '@/db/client';
-import { stockMovements, variants } from '@/db/schema';
+import { auditLog, stockMovements, variants } from '@/db/schema';
 import { applyMovement } from '@/services/stock';
 import { expectNoSellerKeys } from '../helpers/catalog';
 import { call } from '../helpers/http';
@@ -161,5 +161,24 @@ describe('stock counts', () => {
     const list = await call(LIST, { path: '/api/v1/stock/counts', cookie: sellerCookie });
     expect(list.status).toBe(200);
     expectNoSellerKeys(await list.json());
+  });
+});
+
+describe('stock count apply re-checks targets', () => {
+  it('skips a variant deactivated after the count started; others still apply', async () => {
+    const { db, cookie, variants: [a, b] } = await fixture();
+    const { body: count } = await start(cookie);
+    expect((await patch(cookie, count.id, { items: [{ variantId: a.id, countedQty: 99 }, { variantId: b.id, countedQty: 7 }] })).status).toBe(200);
+    await db.update(variants).set({ isActive: false }).where(eq(variants.id, a.id));
+    const res = await apply(cookie, count.id);
+    expect(res.status).toBe(200);
+    const [ra] = await db.select({ q: variants.quantity }).from(variants).where(eq(variants.id, a.id));
+    const [rb] = await db.select({ q: variants.quantity }).from(variants).where(eq(variants.id, b.id));
+    expect(ra!.q).toBe(10);
+    expect(rb!.q).toBe(7);
+    const moves = await db.select().from(stockMovements).where(eq(stockMovements.referenceId, count.id));
+    expect(moves.map((m) => m.variantId)).toEqual([b.id]);
+    const [entry] = await db.select().from(auditLog).where(eq(auditLog.action, 'count.apply'));
+    expect((entry!.after as { skipped: string[] }).skipped).toContain(a.id);
   });
 });
