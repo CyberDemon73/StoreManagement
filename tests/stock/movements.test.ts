@@ -31,7 +31,10 @@ describe('GET /stock/movements', () => {
     expect(status).toBe(200);
     expect(body).toMatchObject({ page: 1, pageSize: 25, total: 3 });
     expect(body.data).toHaveLength(3);
-    const [sale, initB, initA] = body.data;
+    // The two INITIAL rows share one transaction timestamp (now()), so only the SALE's position is fixed.
+    const [sale] = body.data;
+    const initA = body.data.find((m: { variantId: string; type: string }) => m.variantId === a.id && m.type === 'INITIAL');
+    const initB = body.data.find((m: { variantId: string }) => m.variantId === b.id);
     expect(sale).toMatchObject({
       variantId: a.id,
       type: 'SALE',
