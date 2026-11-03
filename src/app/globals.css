@@ -1,26 +1,164 @@
 @import "tailwindcss";
 
+/* Dark mode is driven by CSS variables, so token classes (bg-surface, text-ink…) swap
+   automatically. The `dark:` variant is also available for the rare one-off. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ---------- Design tokens (light) ---------- */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --bg: #f7f6f3;
+  --surface: #ffffff;
+  --surface-2: #f1efea;
+  --ink: #1f2421;
+  --ink-2: #5b625d;
+  --ink-3: #9aa09b; /* icons, placeholders, dividers only — fails 4.5:1 as text */
+  --line: #e6e3dc;
+  --accent: #3f6b5c;
+  --accent-soft: #e3ede8;
+  --accent-ink: #ffffff;
+  --accent-hover: #355b4e;
+  --ok: #2f7d5b;
+  --ok-soft: #e1f0e8;
+  --ok-ink: #1f5e43;
+  --warn: #b7791f;
+  --warn-soft: #f6ebd3;
+  --warn-ink: #7a4f0e;
+  --danger: #b04a3f;
+  --danger-soft: #f5e0dd;
+  --danger-ink: #8a3328;
+  --info: #3d6a8a;
+  --info-soft: #e0eaf1;
+  --info-ink: #2e5169;
+  --shadow-float: 0 8px 24px rgba(31, 36, 33, 0.1);
+  color-scheme: light;
 }
 
+/* ---------- Dark ---------- */
+.dark {
+  --bg: #141715;
+  --surface: #1c201e;
+  --surface-2: #232826;
+  --ink: #eceeeb;
+  --ink-2: #aeb5b0;
+  --ink-3: #7e857f;
+  --line: #2e3331;
+  --accent: #7fb5a0;
+  --accent-soft: #223229;
+  --accent-ink: #0f1a15;
+  --accent-hover: #93c4b1;
+  --ok: #6fbf95;
+  --ok-soft: #1e2f27;
+  --ok-ink: #9bd6b9;
+  --warn: #d9a24a;
+  --warn-soft: #332a18;
+  --warn-ink: #e8bf78;
+  --danger: #d97a6e;
+  --danger-soft: #36201d;
+  --danger-ink: #eba399;
+  --info: #7fa6c4;
+  --info-soft: #1d2a34;
+  --info-ink: #a6c4da;
+  --shadow-float: 0 8px 24px rgba(0, 0, 0, 0.45);
+  color-scheme: dark;
+}
+
+/* ---------- Tailwind theme mapping ---------- */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --color-accent-soft: var(--accent-soft);
+  --color-accent-ink: var(--accent-ink);
+  --color-accent-hover: var(--accent-hover);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-ok-ink: var(--ok-ink);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-warn-ink: var(--warn-ink);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-danger-ink: var(--danger-ink);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+  --color-info-ink: var(--info-ink);
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, Menlo, Consolas, monospace;
+
+  --radius-card: 12px;
+  --radius-input: 8px;
+  --shadow-float: var(--shadow-float);
+
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+
+  --animate-sk: sk 1.4s ease-in-out infinite;
+  @keyframes sk {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
   }
 }
 
+/* ---------- Base ---------- */
+html {
+  background: var(--bg);
+}
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
+}
+@media (min-width: 768px) {
+  body { font-size: 14px; }
+}
+h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.01em; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+::selection { background: var(--accent-soft); }
+input::placeholder, textarea::placeholder { color: var(--ink-3); }
+button { cursor: pointer; }
+button:disabled { cursor: not-allowed; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
+
+/* ---------- Utilities the primitives rely on ---------- */
+@utility tabular { font-variant-numeric: tabular-nums; }
+@utility eyebrow {
+  font-size: 11px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2);
+}
+@utility skeleton {
+  background: linear-gradient(90deg, var(--surface-2), var(--line), var(--surface-2));
+  background-size: 200% 100%;
+  border-radius: 6px;
+  animation: sk 1.4s ease-in-out infinite;
+}
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar { display: none; }
+}
+@utility safe-bottom { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+@utility safe-top { padding-top: env(safe-area-inset-top); }
+
+/* ---------- Print: receipt & labels only ---------- */
+@media print {
+  body { background: #fff; color: #000; font-size: 12pt; }
+  .no-print, nav, header.app-topbar, aside.app-sidebar { display: none !important; }
+  .print-area { display: block !important; position: static !important; box-shadow: none !important; }
+  a { text-decoration: none; color: inherit; }
+  @page { margin: 8mm; }
+  .print-labels-a4 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4mm; }
+  .print-labels-thermal { display: block; }
+  .print-labels-thermal > * { page-break-after: always; width: 40mm; height: 30mm; }
 }

@@ -9,6 +9,9 @@ Format: `YYYY-MM-DD — decision — why — alternatives considered`
 - 2026-11-02 — Weighted-average cost (not FIFO) — simpler, good enough for apparel — FIFO (phase 3 if needed)
 - 2026-11-02 — Admin == Manager permissions today, separate role labels — allows future split without migration
 - 2026-11-02 — Superpowers plugin mandatory for sprint workflow — enforces plan-first + TDD + verification
+- 2026-11-02 — Frontend lives inside this Next.js app (src/app/(app), src/screens, src/components, src/mock, src/lib/api.ts) instead of a separate frontend-handoff/ package — one typecheck/build, shared types with the API — separate Vite package (rejected: duplicate tooling, no shared types)
+- 2026-11-02 — Frontend data access through a single typed client src/lib/api.ts with USE_MOCK switch and an in-memory mock store — screens never import mock data directly, so wiring real routes is a one-file change — per-screen fetch (rejected)
+- 2026-11-02 — Charts with recharts, icons with lucide-react, no component framework (Tailwind v4 + own primitives) — per the design brief; shadcn-style primitives kept small
 - 2026-11-02 — Drizzle via `drizzle-orm/neon-serverless` (WebSocket Pool from `@neondatabase/serverless`) instead of the neon-http adapter — HTTP driver has no interactive transactions, which Sprint 2 needs for `SELECT … FOR UPDATE` — neon-http (rejected)
 - 2026-11-02 — Next.js pinned to 15.x although 16 is current — docs specify 15; upgrade is a separate decision — Next 16 (deferred)
 - 2026-11-02 — Vitest 3 (not 5) — vitest 5 depends on a rolldown native binding that needs Node ≥ 22.12; dev machine runs 22.5 — vitest 5 (bump when Node is upgraded)
