@@ -95,11 +95,16 @@ export function PosScreen() {
   const [charging, setCharging] = useState(false);
   const [sale, setSale] = useState<Sale>();
   const [cartOpen, setCartOpen] = useState(false);
+  // One Idempotency-Key per checkout attempt; reused on retry so a double tap or a flaky
+  // connection never charges twice. Cleared once the sale is created.
+  const idemKey = useRef<string>();
   const charge = async () => {
     if (chargeBlocker(cart, settings.data)) return;
     setCharging(true);
+    idemKey.current ??= crypto.randomUUID();
     try {
-      const s = await api.sales.create(cart);
+      const s = await api.sales.create(cart, idemKey.current);
+      idemKey.current = undefined;
       actions.clear();
       setStockErrors({});
       setCartOpen(false);

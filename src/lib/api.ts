@@ -24,7 +24,7 @@ import type {
  * the mock everywhere for a demo without a database.
  */
 export const USE_MOCK_ALL = process.env.NEXT_PUBLIC_USE_MOCK === '1';
-const LIVE_PREFIXES = ['/auth/', '/setup', '/products', '/variants', '/brands', '/categories', '/suppliers', '/uploads', '/stock'];
+const LIVE_PREFIXES = ['/auth/', '/setup', '/products', '/variants', '/brands', '/categories', '/suppliers', '/uploads', '/stock', '/sales'];
 const MOCK_ONLY = [/^\/products\/(export|import)/, /^\/variants\/[^/]+\/sold/, /^\/me\//];
 export function isLive(path: string): boolean {
   if (USE_MOCK_ALL) return false;
@@ -83,11 +83,11 @@ async function mock<T>(fn: () => T): Promise<T> {
   }
 }
 
-async function request<T>(method: string, path: string, body?: unknown, query?: Record<string, unknown>): Promise<T> {
+async function request<T>(method: string, path: string, body?: unknown, query?: Record<string, unknown>, extraHeaders?: Record<string, string>): Promise<T> {
   const qs = query ? '?' + new URLSearchParams(Object.entries(query).filter(([, v]) => v !== undefined && v !== '' && v !== null).map(([k, v]) => [k, String(v)])).toString() : '';
   let res: Response;
   try {
-    res = await fetch(`${BASE}${path}${qs}`, { method, credentials: 'same-origin', headers: { 'content-type': 'application/json', 'X-Requested-With': 'AvenueStock' }, body: body === undefined ? undefined : JSON.stringify(body) });
+    res = await fetch(`${BASE}${path}${qs}`, { method, credentials: 'same-origin', headers: { 'content-type': 'application/json', 'X-Requested-With': 'AvenueStock', ...extraHeaders }, body: body === undefined ? undefined : JSON.stringify(body) });
   } catch {
     throw new ApiError('OFFLINE', "You're offline", 0);
   }
@@ -109,8 +109,8 @@ async function requestMultipart<T>(path: string, form: FormData): Promise<T> {
   return data as T;
 }
 
-const call = <T>(mockFn: () => T, method: string, path: string, body?: unknown, query?: Record<string, unknown>): Promise<T> =>
-  isLive(path) ? request<T>(method, path, body, query) : mock(mockFn);
+const call = <T>(mockFn: () => T, method: string, path: string, body?: unknown, query?: Record<string, unknown>, extraHeaders?: Record<string, string>): Promise<T> =>
+  isLive(path) ? request<T>(method, path, body, query, extraHeaders) : mock(mockFn);
 
 /** Keep only the keys a strict Zod body accepts (unknown keys are a 400). */
 const pick = <T extends object>(obj: T, keys: (keyof T)[]): Partial<T> => {
@@ -226,17 +226,31 @@ export const api = {
     /** GET /sales/:id */
     get: (id: string) => call<Sale>(() => store.getSale(id), 'GET', `/sales/${id}`),
     /** POST /sales — server recomputes totals; the cart is a hint. */
-    create: (cart: Cart) => call<Sale>(() => store.createSale(cart, ctx.userId, ctx.role), 'POST', '/sales', { items: cart.lines.map((l) => ({ variantId: l.variantId, qty: l.qty })), discount: cart.discount, paymentMethod: cart.paymentMethod, customerName: cart.customerName, customerPhone: cart.customerPhone, note: cart.note }),
+    /**
+     * POST /sales — the server recomputes totals; the cart is a hint. The UI keeps the discount
+     * value in pounds for PCT/AMOUNT typing; the API takes AMOUNT in minor units. A seller over
+     * the cap gets 400 fields.discount, so the clamped preview value is what gets sent.
+     * `idempotencyKey` (uuid) must be reused when the same checkout is retried.
+     */
+    create: (cart: Cart, idempotencyKey?: string) => {
+      const preview = store.computeCart(cart, ctx.role);
+      const discount = cart.discount.type === 'AMOUNT'
+        ? { type: 'AMOUNT' as const, value: Math.min(Math.round(cart.discount.value * 100), preview.subtotal) }
+        : { type: 'PCT' as const, value: preview.capHit ? preview.cap : cart.discount.value };
+      const body = { items: cart.lines.map((l) => ({ variantId: l.variantId, qty: l.qty })), discount: discount.value > 0 ? discount : undefined, paymentMethod: cart.paymentMethod, customerName: cart.customerName || undefined, customerPhone: cart.customerPhone || undefined, note: cart.note || undefined };
+      return call<Sale>(() => store.createSale(cart, ctx.userId, ctx.role), 'POST', '/sales', body, undefined, idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : undefined);
+    },
     /** Client-side preview of what the server will compute (same rules). */
     preview: (cart: Cart) => store.computeCart(cart, ctx.role),
     /** POST /sales/:id/void */
     void: (id: string, reason: string) => call<Sale>(() => store.voidSale(id, reason, ctx.userId), 'POST', `/sales/${id}/void`, { reason }),
     /** POST /sales/:id/returns */
-    createReturn: (id: string, input: store.ReturnInput) => call<Sale>(() => store.createReturn(id, input, ctx.userId), 'POST', `/sales/${id}/returns`, input),
+    createReturn: (id: string, input: store.ReturnInput) => call<Sale>(() => store.createReturn(id, input, ctx.userId), 'POST', `/sales/${id}/returns`, { items: input.items.filter((i) => i.qty > 0), refundMethod: input.refundMethod, reason: input.reason, note: input.note || undefined }),
     /** GET /sales/parked */
     parked: () => call<ParkedSale[]>(() => store.listParked(), 'GET', '/sales/parked'),
     /** POST /sales/parked */
     park: (cart: Cart, label: string) => call<ParkedSale>(() => store.parkSale(cart, label), 'POST', '/sales/parked', { cart, label }),
+    /** Sales list: the server scopes sellers to their own sales; `sellerId` is only sent for managers. */
     /** DELETE /sales/parked/:id (returns the cart to resume) */
     unpark: (id: string) => call<ParkedSale>(() => store.unparkSale(id), 'DELETE', `/sales/parked/${id}`),
   },
