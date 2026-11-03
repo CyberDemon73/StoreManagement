@@ -89,3 +89,6 @@ Format: `YYYY-MM-DD — decision — why — alternatives considered`
 - 2026-11-07 — Admin data export excludes sessions, tokens, idempotency keys, failed logins, known devices and password hashes; a test fails when a new table is neither exported nor excluded
 - 2026-11-07 — `verifyStock` lives in `src/services/stock-verify.ts` (shared by the CLI and the cron) so dotenv/process.exit stay out of route bundles
 - 2026-11-07 — Sentry not added: pino JSON logs with X-Request-Id on every response are enough on the free tier — Sentry free (deferred until there is real traffic)
+- 2026-11-07 — NUL (U+0000) anywhere in parsed input → 400 in `parse()` (Postgres rejects it in text; fuzz found 500s on every search) — per-service checks (rejected)
+- 2026-11-07 — Variant indexes from the 10k-sale EXPLAIN pass (0011): GIN trigram on sku (leading-wildcard search) and a partial index for low stock (`is_active and quantity <= low_stock_threshold`); /variants/search OR-across-tables scan accepted at ~2k variants — UNION rewrite (deferred)
+- 2026-11-07 — Real-Postgres race test (20 parallel sales on qty 5) runs only in the CI `race` job (postgres:16 service) — it has not yet run locally; first real run is the first CI push

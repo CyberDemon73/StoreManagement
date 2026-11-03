@@ -114,6 +114,12 @@ export const variants = pgTable(
     unique('variants_product_size_color_unique').on(t.productId, t.size, t.colorName),
     index('variants_product_id_idx').on(t.productId),
     index('variants_quantity_idx').on(t.quantity),
+    // Product search matches `sku ILIKE '%q%'`; a btree cannot serve a leading wildcard.
+    index('variants_sku_trgm_idx').using('gin', sql`${t.sku} gin_trgm_ops`),
+    // Low-stock list/dashboard: column-vs-column predicate, so only a partial index can serve it.
+    index('variants_low_stock_idx')
+      .on(t.productId)
+      .where(sql`${t.isActive} and ${t.quantity} <= ${t.lowStockThreshold}`),
   ],
 );
 

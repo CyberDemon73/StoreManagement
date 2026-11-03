@@ -32,14 +32,6 @@ import { seedBig } from '../../scripts/seed-big';
 const BIG = ['sales', 'sale_items', 'stock_movements', 'variants'] as const;
 const FULL_READ = 0.5;
 
-/**
- * Indexes declared in src/db/schema but possibly not migrated yet (Sprint 6 Task C proposal; the
- * orchestrator generates the migration). IF NOT EXISTS makes this a no-op once they are.
- */
-const PENDING_INDEXES = [
-  `create index if not exists variants_sku_trgm_idx on variants using gin (sku gin_trgm_ops)`,
-  `create index if not exists variants_low_stock_idx on variants (product_id) where is_active and quantity <= low_stock_threshold`,
-];
 
 interface Captured {
   sql: string;
@@ -91,7 +83,6 @@ describe.skipIf(process.env.PERF !== '1')('perf: EXPLAIN on a big dataset', () =
     expect(counts.sales).toBe(10_000);
     expect((await verifyStock(db)).ok).toBe(true);
 
-    for (const ddl of PENDING_INDEXES) await client.exec(ddl);
     await client.exec('analyze');
 
     const sizes = new Map<string, number>();
@@ -113,7 +104,9 @@ describe.skipIf(process.env.PERF !== '1')('perf: EXPLAIN on a big dataset', () =
     const scenarios: { name: string; run: () => Promise<unknown>; wholeTable?: RegExp | true }[] = [
       // Unfiltered list: stock filters/sorts and count(*) over() need every product's variant aggregate.
       { name: 'products list (page 1)', run: () => listProducts(db, productListQuery.parse({})), wholeTable: /count\(\*\) over\(\)/ },
-      { name: 'products list q', run: () => listProducts(db, productListQuery.parse({ q: 'Product 0123' })) },
+      // Same shape as page 1: count(*) over() plus a per-product variant aggregate; the sku trigram index
+      // (0011) serves the EXISTS branch, but the aggregate still reads every active product's variants.
+      { name: 'products list q', run: () => listProducts(db, productListQuery.parse({ q: 'Product 0123' })), wholeTable: /count\(\*\) over\(\)/ },
       { name: 'low stock', run: () => lowStock(db) },
       // `sku ILIKE … OR barcode = … OR products.name ILIKE …` spans two tables, so no single index can
       // drive it; a UNION rewrite would. Accepted at store scale (see report), printed for tracking.
