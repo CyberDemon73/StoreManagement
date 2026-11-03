@@ -4,7 +4,7 @@ import { uuidSchema } from './common';
 export const brandBody = z
   .object({
     name: z.string().trim().min(1).max(60),
-    logoUrl: z.string().url().max(500).optional(),
+    logoUrl: z.string().url().startsWith('https://', 'Must be an https URL').max(500).optional(),
     isActive: z.boolean().optional(),
   })
   .strict();
