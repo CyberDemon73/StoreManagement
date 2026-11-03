@@ -49,17 +49,17 @@ Each sprint: ~1 Claude Code session of focused work. Run `/sprint N` (skill incl
 ## Sprint 2 — Stock ledger: movements, purchases, adjustments
 **Goal:** quantity is derived from an immutable ledger; cost tracking is correct.
 
-- [ ] Schema: `stock_movements`, `purchases`, `purchase_items`, `stock_counts`, `stock_count_items`.
-- [ ] `applyMovement(tx, { variantId, type, qtyDelta, unitCost, reference, reason, userId })` — single function all stock changes go through; updates `variants.quantity` **inside the same transaction** with `SELECT … FOR UPDATE`; rejects negative result unless `settings.allowNegativeStock`.
-- [ ] Weighted-average cost: on PURCHASE, `newCost = (oldQty*oldCost + inQty*inCost) / (oldQty+inQty)`; store on variant; movement keeps the incoming cost.
-- [ ] `POST /stock/purchases` (lines → PURCHASE movements), `GET /stock/purchases`, `GET /stock/purchases/:id`.
-- [ ] `POST /stock/adjustments` (single or bulk; reason enum required).
-- [ ] `GET /stock/movements` filterable, paginated, joined with variant/product/user.
-- [ ] `GET /stock/low` (qty ≤ threshold) and out-of-stock.
-- [ ] Stock count: `POST /stock/counts` (start), `PATCH /stock/counts/:id` (upsert counted items), `GET` variance, `POST /stock/counts/:id/apply` (ADJUSTMENT movements, locks the count).
-- [ ] Replace Sprint 1 stub: initial quantities now create INITIAL movements.
-- [ ] Reconciliation job `pnpm stock:verify` compares Σ movements vs `variants.quantity`.
-- [ ] Tests: concurrency (two sales racing for the last unit), negative stock rejection, average-cost math.
+- [x] Schema: `stock_movements`, `purchases`, `purchase_items`, `stock_counts`, `stock_count_items`.
+- [x] `applyMovement(tx, { variantId, type, qtyDelta, unitCost, reference, reason, userId })` — single function all stock changes go through; updates `variants.quantity` **inside the same transaction** with `SELECT … FOR UPDATE`; rejects negative result unless `settings.allowNegativeStock`.
+- [x] Weighted-average cost: on PURCHASE, `newCost = (oldQty*oldCost + inQty*inCost) / (oldQty+inQty)`; store on variant; movement keeps the incoming cost.
+- [x] `POST /stock/purchases` (lines → PURCHASE movements), `GET /stock/purchases`, `GET /stock/purchases/:id`.
+- [x] `POST /stock/adjustments` (single or bulk; reason enum required).
+- [x] `GET /stock/movements` filterable, paginated, joined with variant/product/user.
+- [x] `GET /stock/low` (qty ≤ threshold) and out-of-stock.
+- [x] Stock count: `POST /stock/counts` (start), `PATCH /stock/counts/:id` (upsert counted items), `GET` variance, `POST /stock/counts/:id/apply` (ADJUSTMENT movements, locks the count).
+- [x] Replace Sprint 1 stub: initial quantities now create INITIAL movements.
+- [x] Reconciliation job `pnpm stock:verify` compares Σ movements vs `variants.quantity`.
+- [ ] Tests: concurrency (two sales racing for the last unit), negative stock rejection, average-cost math. _(negative rejection + average cost + sorted lock order tested; a true concurrent race needs Neon/Docker Postgres — PGlite is single-connection; see DECISIONS)_
 
 ---
 

@@ -86,9 +86,9 @@ export interface StockCountOut { id; number; status; scope; startedBy; startedBy
 - `idempotencyKeys` (userId fk cascade, key text, requestHash text, status int, response jsonb, createdAt; pk (userId, key); index createdAt).
 - Migration 0004: generated DDL + `ALTER TABLE stock_movements ADD COLUMN qty_after integer` as nullable first, backfill `UPDATE stock_movements m SET qty_after = s.running FROM (SELECT id, SUM(qty_delta) OVER (PARTITION BY variant_id ORDER BY created_at, id) AS running FROM stock_movements) s WHERE s.id = m.id`, then `SET NOT NULL` (edit the generated SQL so the NOT NULL comes after the backfill; keep `--> statement-breakpoint`).
 
-- [ ] **Step 1 (test):** tables select `[]`; `stock_count_items` unique `(count_id, variant_id)` → `23505`; `idempotency_keys` pk `(user_id, key)` → `23505`; inserting a movement without `qty_after` → `23502`.
-- [ ] **Step 2:** run → FAIL. **Step 3:** schema + `pnpm db:generate` + edit SQL (verify order: add nullable → backfill → set not null). **Step 4:** run → PASS (`tests/db`, `tests/services/stock` will now fail on qtyAfter — expected until Task 2; run only `tests/db/stock-schema`).
-- [ ] **Step 5: Commit** `chore(db): purchases, stock counts, counters, idempotency keys, movements.qty_after (0004)`
+- [x] **Step 1 (test):** tables select `[]`; `stock_count_items` unique `(count_id, variant_id)` → `23505`; `idempotency_keys` pk `(user_id, key)` → `23505`; inserting a movement without `qty_after` → `23502`.
+- [x] **Step 2:** run → FAIL. **Step 3:** schema + `pnpm db:generate` + edit SQL (verify order: add nullable → backfill → set not null). **Step 4:** run → PASS (`tests/db`, `tests/services/stock` will now fail on qtyAfter — expected until Task 2; run only `tests/db/stock-schema`).
+- [x] **Step 5: Commit** `chore(db): purchases, stock counts, counters, idempotency keys, movements.qty_after (0004)`
 
 ---
 
@@ -103,9 +103,9 @@ export interface StockCountOut { id; number; status; scope; startedBy; startedBy
 - `nextNumber(tx, prefix)`: `insert into sale_counters(prefix) values($1) on conflict do nothing`, then `select next from sale_counters where prefix=$1 for update`, update `next+1`, return `${prefix}-${String(n).padStart(6,'0')}`.
 - `withIdempotency`: `key === null` → run `fn`; else look up `(userId, key)`: hit with same `requestHash` → return stored `{status, body, replayed:true}`; hit with different hash → `AppError('CONFLICT', 'Idempotency-Key reused with a different request')`; miss → run `fn` inside the caller's transaction? No: run `fn` (which opens its own transaction), then insert the row (`on conflict do nothing`); rows older than 24 h are ignored on lookup (`created_at > now() - interval '24 hours'`). `requestHash = sha256(JSON.stringify(body))` computed by the route.
 
-- [ ] **Step 1 (tests):** qtyAfter equals result quantity after INITIAL +10 then SALE −3 (10, 7); `lockVariants` with an unknown id → NOT_FOUND; `applyMovements` on [B, A] locks sorted and applies in input order (assert both quantities); `nextNumber('PO')` → `PO-000001`, `PO-000002`; two prefixes independent; idempotency: first call runs fn once and stores; second call with same hash returns stored body and `replayed: true` without calling fn; different hash → CONFLICT; expired row (set `createdAt` 25 h ago) → fn runs again.
-- [ ] **Step 2:** run → FAIL. **Step 3:** implement. **Step 4:** `pnpm vitest run tests/services tests/lib/idempotency tests/db tests/products` → PASS (Sprint 1 suites must still pass).
-- [ ] **Step 5: Commit** `feat(stock): qtyAfter, sorted variant locking, document numbers, DB-backed idempotency`
+- [x] **Step 1 (tests):** qtyAfter equals result quantity after INITIAL +10 then SALE −3 (10, 7); `lockVariants` with an unknown id → NOT_FOUND; `applyMovements` on [B, A] locks sorted and applies in input order (assert both quantities); `nextNumber('PO')` → `PO-000001`, `PO-000002`; two prefixes independent; idempotency: first call runs fn once and stores; second call with same hash returns stored body and `replayed: true` without calling fn; different hash → CONFLICT; expired row (set `createdAt` 25 h ago) → fn runs again.
+- [x] **Step 2:** run → FAIL. **Step 3:** implement. **Step 4:** `pnpm vitest run tests/services tests/lib/idempotency tests/db tests/products` → PASS (Sprint 1 suites must still pass).
+- [x] **Step 5: Commit** `feat(stock): qtyAfter, sorted variant locking, document numbers, DB-backed idempotency`
 
 ---
 
@@ -118,8 +118,8 @@ export interface StockCountOut { id; number; status; scope; startedBy; startedBy
 - `listMovements(db, query): Paginated<StockMovementOut>` — join variants, products, users (left); `reference.label` = purchase `number` / count `number` (sale later) via left joins on `reference_kind`; `q` matches sku ILIKE or product name ILIKE (escaped); newest first (`created_at desc, id desc`); `count(*) over()` + fallback count.
 - `tests/helpers/stock.ts`: `stockFixture(db, user?)` → `{ brand, category, product, variants: [A,B,C] }` with INITIAL 10/5/0 via `db.transaction(applyMovement)`.
 
-- [ ] **Step 1 (tests):** MANAGER list → rows have `qtyAfter`, `variant.productName`, `userName` ('—' when null), `unitCost` present; filters `variantId`, `type=INITIAL`, `from/to` (movement created today included with `to=today`, excluded with `to=yesterday`), `q=<sku>`; SELLER → 403; pageSize 500 → 400.
-- [ ] **Step 2–5:** RED → implement + register → GREEN → commit `feat(stock): movements ledger listing with filters`
+- [x] **Step 1 (tests):** MANAGER list → rows have `qtyAfter`, `variant.productName`, `userName` ('—' when null), `unitCost` present; filters `variantId`, `type=INITIAL`, `from/to` (movement created today included with `to=today`, excluded with `to=yesterday`), `q=<sku>`; SELLER → 403; pageSize 500 → 400.
+- [x] **Step 2–5:** RED → implement + register → GREEN → commit `feat(stock): movements ledger listing with filters`
 
 ---
 
@@ -129,8 +129,8 @@ export interface StockCountOut { id; number; status; scope; startedBy; startedBy
 
 **Produces:** `adjustmentsBody = { items: z.array({ variantId uuid, qtyDelta?: int (≠0, |x| ≤ INT4), newQty?: int ≥0 ≤ INT4, reason: enum DAMAGED|LOST|FOUND|CORRECTION|OTHER, note?: ≤500 }.strict().refine(exactly one of qtyDelta/newQty)).min(1).max(200) }`; `createAdjustments(db, user, input, ctx): Promise<StockMovementOut[]>` — one transaction: `lockVariants`, compute delta (`newQty - quantity`), skip zero deltas, `applyMovement` type ADJUSTMENT with `reason: `${reason}${note ? ': ' + note : ''}``, audit `stock.adjust` once with the list; returns created movements (via `listMovements`-style serializer).
 
-- [ ] **Step 1 (tests):** `qtyDelta: -4` on A(10) → 200, `[ { qtyDelta: -4, qtyAfter: 6, type: 'ADJUSTMENT' } ]`; `newQty: 10` on A(10) → 200 `[]` and no movement row; `newQty: 2` on B(5) → delta −3; `qtyDelta: -20` on A → 409 `INSUFFICIENT_STOCK` `fields[A]`, no rows; both `qtyDelta` and `newQty` → 400; SELLER → 403; audit row `stock.adjust`.
-- [ ] **Step 2–5:** RED → GREEN → commit `feat(stock): adjustments (single and bulk) through the ledger`
+- [x] **Step 1 (tests):** `qtyDelta: -4` on A(10) → 200, `[ { qtyDelta: -4, qtyAfter: 6, type: 'ADJUSTMENT' } ]`; `newQty: 10` on A(10) → 200 `[]` and no movement row; `newQty: 2` on B(5) → delta −3; `qtyDelta: -20` on A → 409 `INSUFFICIENT_STOCK` `fields[A]`, no rows; both `qtyDelta` and `newQty` → 400; SELLER → 403; audit row `stock.adjust`.
+- [x] **Step 2–5:** RED → GREEN → commit `feat(stock): adjustments (single and bulk) through the ledger`
 
 ---
 
@@ -141,8 +141,8 @@ export interface StockCountOut { id; number; status; scope; startedBy; startedBy
 **Produces:** `purchaseBody = { supplierId?: uuid, invoiceRef?: ≤60, receivedAt?: ISO datetime, note?: ≤500, items: array({ variantId uuid, qty int 1..INT4, unitCost money }).min(1).max(200) }.strict()`; `createPurchase(db, user, input, ctx): Promise<PurchaseOut>` — transaction: `lockVariants`, `nextNumber('PO')`, insert purchase (`total = Σ qty*unitCost`, `receivedAt ?? now`), items, `applyMovement` PURCHASE per line with `unitCost`, `reference { kind:'purchase', id }`, audit `purchase.create`; `listPurchases(db, { page, pageSize })` newest first with `lineCount`, `unitCount`, `supplierName`, `createdByName`; `getPurchase(db, id)` 404.
 Route POST: `const key = req.headers.get('idempotency-key')` → if present must match uuid regex else 400; `withIdempotency(db, user.id, key, hash, () => createPurchase(...).then(body => ({ status: 201, body })))`; set header `Idempotent-Replayed: true` on replay.
 
-- [ ] **Step 1 (tests):** create with 2 lines → 201 `number 'PO-000001'`, `total`, `lineCount 2`, `unitCount`, quantities moved, costPrice re-averaged (A: 10@500 + 10@700 → 600), 2 PURCHASE movements with `reference.label 'PO-000001'` in `GET /stock/movements`; second create → `PO-000002`; replay same `Idempotency-Key` + body → 201 identical body, header `Idempotent-Replayed: true`, still 2 movements; same key different body → 409; invalid key format → 400; `items: []` → 400; `qty: 0` → 400 with `fields['items.0.qty']`; unknown variant → 404; SELLER → 403; `GET /stock/purchases` list + `GET /:id`; supplier list now shows `purchaseCount 1` and `lastPurchaseAt`.
-- [ ] **Step 2–5:** RED → GREEN → commit `feat(stock): purchases with weighted-average cost and idempotency`
+- [x] **Step 1 (tests):** create with 2 lines → 201 `number 'PO-000001'`, `total`, `lineCount 2`, `unitCount`, quantities moved, costPrice re-averaged (A: 10@500 + 10@700 → 600), 2 PURCHASE movements with `reference.label 'PO-000001'` in `GET /stock/movements`; second create → `PO-000002`; replay same `Idempotency-Key` + body → 201 identical body, header `Idempotent-Replayed: true`, still 2 movements; same key different body → 409; invalid key format → 400; `items: []` → 400; `qty: 0` → 400 with `fields['items.0.qty']`; unknown variant → 404; SELLER → 403; `GET /stock/purchases` list + `GET /:id`; supplier list now shows `purchaseCount 1` and `lastPurchaseAt`.
+- [x] **Step 2–5:** RED → GREEN → commit `feat(stock): purchases with weighted-average cost and idempotency`
 
 ---
 
@@ -152,8 +152,8 @@ Route POST: `const key = req.headers.get('idempotency-key')` → if present must
 
 **Produces:** `lowStock(db): Promise<{ low: VariantWithProductOut[]; out: VariantWithProductOut[] }>` over active variants of ACTIVE products: `low` = `0 < qty ≤ threshold`, `out` = `qty ≤ 0`; ordered by product name, size. Route `stock.read`, `forRole`.
 
-- [ ] **Step 1 (tests):** fixture A(10,thr 3) B(2,thr 3) C(0) → `low:[B]`, `out:[C]`; archived product's variants excluded; SELLER → 200 with `expectNoSellerKeys`.
-- [ ] **Step 2–5:** RED → GREEN → commit `feat(stock): low and out-of-stock lists`
+- [x] **Step 1 (tests):** fixture A(10,thr 3) B(2,thr 3) C(0) → `low:[B]`, `out:[C]`; archived product's variants excluded; SELLER → 200 with `expectNoSellerKeys`.
+- [x] **Step 2–5:** RED → GREEN → commit `feat(stock): low and out-of-stock lists`
 
 ---
 
@@ -168,17 +168,17 @@ Route POST: `const key = req.headers.get('idempotency-key')` → if present must
 - `applyCount(db, user, id, { uncountedAsZero }, ctx)`: OPEN only; transaction: lock variants (sorted), for each item with `countedQty != null` (or all when `uncountedAsZero`, treating null as 0): `delta = countedQty - liveQuantity`; `applyMovement` ADJUSTMENT with `reference { kind:'count', id }`, `reason 'Stock count <number>'`; skip zero; set `status APPLIED, appliedAt, appliedBy`; audit `count.apply` with movement count.
 - `cancelCount` OPEN → CANCELLED; audit `count.cancel`.
 
-- [ ] **Step 1 (tests):** start (MANAGER) → 201 `number 'SC-000001'`, `status OPEN`, 3 items with `systemQty` 10/5/0; SELLER can `GET` and `PATCH` counts (200) but `POST` start → 403 and apply → 403; PATCH `{ items:[{A, countedQty: 8}] }` → item has `countedQty 8`, `countedBy`; sale-like change between snapshot and apply: apply a −1 adjustment to A (live 9) then `apply` → A gets delta `8-9 = -1` (not −2), `status APPLIED`, movement `reference.kind 'count'`; apply again → 409; `uncountedAsZero: true` zeroes B (5→0) and leaves C (0) without a movement; PATCH after apply → 409; cancel OPEN → `CANCELLED`, apply after cancel → 409; SELLER count items → `expectNoSellerKeys`.
-- [ ] **Step 2–5:** RED → GREEN → commit `feat(stock): stock count sessions (start, count, apply, cancel)`
+- [x] **Step 1 (tests):** start (MANAGER) → 201 `number 'SC-000001'`, `status OPEN`, 3 items with `systemQty` 10/5/0; SELLER can `GET` and `PATCH` counts (200) but `POST` start → 403 and apply → 403; PATCH `{ items:[{A, countedQty: 8}] }` → item has `countedQty 8`, `countedBy`; sale-like change between snapshot and apply: apply a −1 adjustment to A (live 9) then `apply` → A gets delta `8-9 = -1` (not −2), `status APPLIED`, movement `reference.kind 'count'`; apply again → 409; `uncountedAsZero: true` zeroes B (5→0) and leaves C (0) without a movement; PATCH after apply → 409; cancel OPEN → `CANCELLED`, apply after cancel → 409; SELLER count items → `expectNoSellerKeys`.
+- [x] **Step 2–5:** RED → GREEN → commit `feat(stock): stock count sessions (start, count, apply, cancel)`
 
 ---
 
 ### Task 8: Docs, checklist, verification, security review
 
-- [ ] DECISIONS (counters pulled forward; qtyAfter column; DB idempotency; count variance against live qty; cancel endpoint; concurrency test limits on PGlite), API-SPEC Stock table notes, DATA-MODEL, SPRINTS ticks (leave "Tests: concurrency (two sales racing…)" ticked only if a real race test exists — see ruling), README unchanged.
-- [ ] Verify `pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm audit --audit-level=high`; `grep -rn "set({ quantity" src/` → only stock.ts.
-- [ ] `/security-review` (A1 matrix incl. new routes; seller-stripping matrix test picks up `/stock/low` and counts automatically; E1–E4).
-- [ ] Commit `docs: sprint 2 checklist, decisions, API notes`.
+- [x] DECISIONS (counters pulled forward; qtyAfter column; DB idempotency; count variance against live qty; cancel endpoint; concurrency test limits on PGlite), API-SPEC Stock table notes, DATA-MODEL, SPRINTS ticks (leave "Tests: concurrency (two sales racing…)" ticked only if a real race test exists — see ruling), README unchanged.
+- [x] Verify `pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm audit --audit-level=high`; `grep -rn "set({ quantity" src/` → only stock.ts.
+- [x] `/security-review` (A1 matrix incl. new routes; seller-stripping matrix test picks up `/stock/low` and counts automatically; E1–E4).
+- [x] Commit `docs: sprint 2 checklist, decisions, API notes`.
 
 ## Deferred
 - Real concurrent race test (needs Neon/Docker Postgres) — ruling in ledger; sequential lock-order test stands in.

@@ -36,3 +36,9 @@ Format: `YYYY-MM-DD — decision — why — alternatives considered`
 - 2026-11-03 — `GET /variants/search?q&limit` added (frontend convenience; API-SPEC updated) — cheap server-side search beats composing on the client
 - 2026-11-03 — `products.created_by` nullable (set null on delete) so seeds and user deletion do not break — required FK (rejected)
 - 2026-11-03 — Vercel Blob and sharp behind test seams (`setBlobForTests`), magic bytes via sharp `metadata().format` — no network in tests; same code path in prod — mocking the module (rejected)
+- 2026-11-03 — `sale_counters` table pulled forward from Sprint 3 for PO/SC document numbers (row-locked allocation) — frontend shows purchase and count numbers — per-table sequences (rejected: three sequences, same code)
+- 2026-11-03 — `stock_movements.qty_after` column added (set by applyMovement, backfilled in 0004) — frontend ledger shows running quantity; avoids window queries — compute on read (rejected)
+- 2026-11-03 — Idempotency keys stored in a DB table per (user, key) for 24 h with request hash — works in tests without Redis; replay returns stored status/body + `Idempotent-Replayed: true` — Upstash (deferred to Sprint 4 cache work)
+- 2026-11-03 — Multi-variant transactions call `lockVariants()` (ids sorted, one FOR UPDATE) before applyMovement — prevents deadlocks between concurrent sales/purchases/counts — per-row locking in call order (rejected: 40P01 deadlocks)
+- 2026-11-03 — Stock count apply computes variance against the LIVE quantity at apply time (not the start snapshot); `uncountedAsZero` option; `POST /stock/counts/:id/cancel` added — a sale between start and apply must not be double-adjusted — snapshot-based variance (rejected)
+- 2026-11-03 — True concurrency race test deferred: PGlite is single-connection; lock-order + negative-rejection tests stand in; add a Docker/Neon test in Sprint 6 CI — cost: a real race would only surface as a 40P01 in prod logs until then
