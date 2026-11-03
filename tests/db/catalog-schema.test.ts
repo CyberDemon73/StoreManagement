@@ -71,4 +71,12 @@ describe('catalog schema', () => {
     expect(m).toMatchObject({ type: 'INITIAL', qtyDelta: -2, unitCost: 500, referenceKind: null, userId: null });
     expect(await pgCode(db.insert(stockMovements).values({ variantId: '00000000-0000-4000-8000-000000000000', type: 'SALE', qtyDelta: 1 }))).toBe('23503');
   });
+
+  it('enforces unique supplier name and unique root category name (23505)', async () => {
+    const db = getDb();
+    await db.insert(suppliers).values({ name: 'Delta' });
+    expect(await pgCode(db.insert(suppliers).values({ name: 'Delta' }))).toBe('23505');
+    await db.insert(categories).values({ name: 'Root' });
+    expect(await pgCode(db.insert(categories).values({ name: 'Root' }))).toBe('23505');
+  });
 });

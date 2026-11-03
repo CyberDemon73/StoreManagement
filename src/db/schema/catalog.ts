@@ -10,6 +10,7 @@ import {
   text,
   timestamp,
   unique,
+  uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
@@ -37,17 +38,25 @@ export const categories = pgTable(
     isActive: boolean('is_active').notNull().default(true),
     ...timestamps,
   },
-  (t) => [unique('categories_name_parent_unique').on(t.name, t.parentId)],
+  (t) => [
+    unique('categories_name_parent_unique').on(t.name, t.parentId),
+    // NULL parents are distinct under the composite unique, so root names need their own index.
+    uniqueIndex('categories_root_name_unique').on(t.name).where(sql`${t.parentId} is null`),
+  ],
 );
 
-export const suppliers = pgTable('suppliers', {
-  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  name: text('name').notNull(),
-  phone: text('phone'),
-  notes: text('notes'),
-  isActive: boolean('is_active').notNull().default(true),
-  ...timestamps,
-});
+export const suppliers = pgTable(
+  'suppliers',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    name: text('name').notNull(),
+    phone: text('phone'),
+    notes: text('notes'),
+    isActive: boolean('is_active').notNull().default(true),
+    ...timestamps,
+  },
+  (t) => [unique('suppliers_name_unique').on(t.name)],
+);
 
 export const productStatusEnum = pgEnum('product_status', ['ACTIVE', 'ARCHIVED']);
 

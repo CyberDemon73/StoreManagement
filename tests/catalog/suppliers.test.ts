@@ -98,4 +98,17 @@ describe('suppliers', () => {
     const bad = await call(POST, { method: 'POST', path: '/api/v1/suppliers', cookie, body: { name: 'X', email: 'a@b.c' } });
     expect(bad.status).toBe(400);
   });
+
+  it('SELLER list omits phone and notes; MANAGER list includes them', async () => {
+    const { db, cookie } = await manager();
+    await call(POST, { method: 'POST', path: '/api/v1/suppliers', cookie, body: { name: 'Delta', phone: '123', notes: 'n' } });
+    const mList = await (await call(GET, { path: '/api/v1/suppliers', cookie })).json();
+    expect(mList[0]).toMatchObject({ phone: '123', notes: 'n' });
+    const s = await createUser(db, { role: 'SELLER' });
+    const sCookie = await sessionCookieFor(db, s.id);
+    const sList = await (await call(GET, { path: '/api/v1/suppliers', cookie: sCookie })).json();
+    expect(sList[0].name).toBe('Delta');
+    expect(sList[0]).not.toHaveProperty('phone');
+    expect(sList[0]).not.toHaveProperty('notes');
+  });
 });

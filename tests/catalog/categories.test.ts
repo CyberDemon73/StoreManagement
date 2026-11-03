@@ -129,4 +129,22 @@ describe('categories', () => {
     const bad = await call(POST, { method: 'POST', path: '/api/v1/categories', cookie, body: { name: 'X', extra: true } });
     expect(bad.status).toBe(400);
   });
+
+  it('PATCH that would create a cycle returns 400 fields.parentId', async () => {
+    const { cookie } = await manager();
+    const a = await (await call(POST, { method: 'POST', path: '/api/v1/categories', cookie, body: { name: 'A' } })).json();
+    const b = await (await call(POST, { method: 'POST', path: '/api/v1/categories', cookie, body: { name: 'B', parentId: a.id } })).json();
+    const res = await call(PATCH, { method: 'PATCH', path: `/api/v1/categories/${a.id}`, cookie, params: { id: a.id }, body: { parentId: b.id } });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields.parentId).toBe('Would create a cycle');
+  });
+
+  it('PATCH parentId:null moves a category to the root', async () => {
+    const { cookie } = await manager();
+    const a = await (await call(POST, { method: 'POST', path: '/api/v1/categories', cookie, body: { name: 'A' } })).json();
+    const b = await (await call(POST, { method: 'POST', path: '/api/v1/categories', cookie, body: { name: 'B', parentId: a.id } })).json();
+    const res = await call(PATCH, { method: 'PATCH', path: `/api/v1/categories/${b.id}`, cookie, params: { id: b.id }, body: { parentId: null } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).not.toHaveProperty('parentId');
+  });
 });

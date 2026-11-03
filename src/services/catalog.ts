@@ -3,6 +3,7 @@ import type { Db } from '@/db/client';
 import { brands, categories, products, suppliers, variants, type CategoryRow, type SupplierRow } from '@/db/schema';
 import { audit, type AuditActor } from '@/lib/audit';
 import type { AuthUser, ReqCtx } from '@/lib/auth';
+import type { Role } from '@/lib/permissions';
 import { AppError } from '@/lib/errors';
 import type { BrandInput, BrandPatch, CategoryInput, CategoryPatch, SupplierInput, SupplierPatch } from '@/schemas/catalog';
 import {
@@ -18,22 +19,32 @@ function actor(user: AuthUser, ctx: ReqCtx): AuditActor {
   return { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent };
 }
 
-function isUniqueViolation(err: unknown): boolean {
-  if (!(err instanceof Error)) return false;
-  const code = (err.cause as { code?: unknown } | undefined)?.code ?? (err as { code?: unknown }).code;
-  return code === '23505';
+const NAME_CONSTRAINTS = new Set([
+  'brands_name_unique',
+  'suppliers_name_unique',
+  'categories_name_parent_unique',
+  'categories_root_name_unique',
+]);
+
+function pgError(err: unknown): { code?: string; constraint?: string } | undefined {
+  const cause = (err instanceof Error ? err.cause : undefined) as { code?: string; constraint?: string } | undefined;
+  return cause?.code ? cause : (err as { code?: string; constraint?: string } | undefined);
 }
 
 function conflict(): AppError {
   return new AppError('CONFLICT', 'A record with this name already exists', { fields: { name: 'Already exists' } });
 }
 
-/** Run a write, turning a unique-constraint violation into a 409 on `name`. */
+/** Run a write, turning a unique violation on a catalogue name constraint into a 409 on `name`. */
 async function mapUnique<T>(fn: () => Promise<T>): Promise<T> {
   try {
     return await fn();
   } catch (err) {
-    if (isUniqueViolation(err)) throw conflict();
+    const pg = pgError(err);
+    if (pg?.code === '23505') {
+      if (pg.constraint && NAME_CONSTRAINTS.has(pg.constraint)) throw conflict();
+      throw new AppError('CONFLICT', 'Already exists');
+    }
     throw err;
   }
 }
@@ -48,13 +59,15 @@ const activeProductCount = sql<number>`count(distinct ${products.id}) filter (wh
 
 // ---------- brands ----------
 
-/** One grouped query: ACTIVE product count and variant count (across all of the brand's products). */
+/** One grouped query: ACTIVE product count and count of active variants of ACTIVE products. */
 async function brandsWithCounts(db: Db, where?: SQL): Promise<BrandOut[]> {
   const rows = await db
     .select({
       brand: brands,
       productCount: activeProductCount,
-      variantCount: sql<number>`count(${variants.id})`.mapWith(Number),
+      variantCount: sql<number>`count(distinct ${variants.id}) filter (where ${products.status} = 'ACTIVE' and ${variants.isActive})`.mapWith(
+        Number,
+      ),
     })
     .from(brands)
     .leftJoin(products, eq(products.brandId, brands.id))
@@ -76,23 +89,29 @@ export function listBrands(db: Db): Promise<BrandOut[]> {
 }
 
 export async function createBrand(db: Db, user: AuthUser, input: BrandInput, ctx: ReqCtx): Promise<BrandOut> {
-  const [row] = await mapUnique(() => db.insert(brands).values(input).returning());
-  if (!row) throw new Error('brand insert returned no row');
-  await audit(db, actor(user, ctx), 'brand.create', 'brand', row.id, null, row);
-  return getBrand(db, row.id);
+  const id = await db.transaction(async (tx) => {
+    const [row] = await mapUnique(() => tx.insert(brands).values(input).returning());
+    if (!row) throw new Error('brand insert returned no row');
+    await audit(tx, actor(user, ctx), 'brand.create', 'brand', row.id, null, row);
+    return row.id;
+  });
+  return getBrand(db, id);
 }
 
 export async function patchBrand(db: Db, user: AuthUser, id: string, patch: BrandPatch, ctx: ReqCtx): Promise<BrandOut> {
-  const [before] = await db.select().from(brands).where(eq(brands.id, id)).limit(1);
-  if (!before) throw notFound('Brand');
-  const [after] = await mapUnique(() =>
-    db
-      .update(brands)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(eq(brands.id, id))
-      .returning(),
-  );
-  await audit(db, actor(user, ctx), 'brand.update', 'brand', id, before, after);
+  await db.transaction(async (tx) => {
+    const [before] = await tx.select().from(brands).where(eq(brands.id, id)).limit(1);
+    if (!before) throw notFound('Brand');
+    const [after] = await mapUnique(() =>
+      tx
+        .update(brands)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(brands.id, id))
+        .returning(),
+    );
+    if (!after) throw notFound('Brand');
+    await audit(tx, actor(user, ctx), 'brand.update', 'brand', id, before, after);
+  });
   return getBrand(db, id);
 }
 
@@ -121,8 +140,7 @@ async function assertParentExists(db: Db, parentId: string | null | undefined): 
   if (!row) throw notFound('Parent category');
 }
 
-// The (name, parent_id) unique constraint treats NULL parents as distinct, so root-level
-// duplicates would slip past the database; check explicitly.
+// Friendly pre-check; the DB (categories_name_parent_unique + categories_root_name_unique) is the authority.
 async function assertCategoryNameFree(db: Db, name: string, parentId: string | null, exceptId?: string): Promise<void> {
   const conds = [eq(categories.name, name), parentId ? eq(categories.parentId, parentId) : isNull(categories.parentId)];
   if (exceptId) conds.push(ne(categories.id, exceptId));
@@ -139,12 +157,35 @@ export function listCategories(db: Db): Promise<CategoryOut[]> {
 }
 
 export async function createCategory(db: Db, user: AuthUser, input: CategoryInput, ctx: ReqCtx): Promise<CategoryOut> {
-  await assertParentExists(db, input.parentId);
-  await assertCategoryNameFree(db, input.name, input.parentId ?? null);
-  const [row] = await mapUnique(() => db.insert(categories).values(input).returning());
-  if (!row) throw new Error('category insert returned no row');
-  await audit(db, actor(user, ctx), 'category.create', 'category', row.id, null, row);
-  return getCategory(db, row.id);
+  const id = await db.transaction(async (tx) => {
+    await assertParentExists(tx, input.parentId);
+    await assertCategoryNameFree(tx, input.name, input.parentId ?? null);
+    const [row] = await mapUnique(() => tx.insert(categories).values(input).returning());
+    if (!row) throw new Error('category insert returned no row');
+    await audit(tx, actor(user, ctx), 'category.create', 'category', row.id, null, row);
+    return row.id;
+  });
+  return getCategory(db, id);
+}
+
+const MAX_CATEGORY_DEPTH = 50;
+
+function cycleError(): AppError {
+  return new AppError('VALIDATION', 'Invalid input', { fields: { parentId: 'Would create a cycle' } });
+}
+
+/** Walk up from `parentId`; reaching `id` means re-parenting would create a cycle. */
+async function assertNoCycle(db: Db, id: string, parentId: string): Promise<void> {
+  let current: string | null = parentId;
+  for (let hops = 0; current; hops++) {
+    if (current === id || hops >= MAX_CATEGORY_DEPTH) throw cycleError();
+    const [row]: { parentId: string | null }[] = await db
+      .select({ parentId: categories.parentId })
+      .from(categories)
+      .where(eq(categories.id, current))
+      .limit(1);
+    current = row?.parentId ?? null;
+  }
 }
 
 export async function patchCategory(
@@ -154,23 +195,30 @@ export async function patchCategory(
   patch: CategoryPatch,
   ctx: ReqCtx,
 ): Promise<CategoryOut> {
-  const [before]: (CategoryRow | undefined)[] = await db.select().from(categories).where(eq(categories.id, id)).limit(1);
-  if (!before) throw notFound('Category');
-  if (patch.parentId === id) {
-    throw new AppError('VALIDATION', 'Invalid input', { fields: { parentId: 'A category cannot be its own parent' } });
-  }
-  await assertParentExists(db, patch.parentId);
-  if (patch.name !== undefined || patch.parentId !== undefined) {
-    await assertCategoryNameFree(db, patch.name ?? before.name, patch.parentId ?? before.parentId, id);
-  }
-  const [after] = await mapUnique(() =>
-    db
-      .update(categories)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(eq(categories.id, id))
-      .returning(),
-  );
-  await audit(db, actor(user, ctx), 'category.update', 'category', id, before, after);
+  await db.transaction(async (tx) => {
+    const [before]: (CategoryRow | undefined)[] = await tx.select().from(categories).where(eq(categories.id, id)).limit(1);
+    if (!before) throw notFound('Category');
+    const parentId = patch.parentId !== undefined ? patch.parentId : before.parentId;
+    if (parentId === id) {
+      throw new AppError('VALIDATION', 'Invalid input', { fields: { parentId: 'A category cannot be its own parent' } });
+    }
+    if (patch.parentId) {
+      await assertParentExists(tx, patch.parentId);
+      await assertNoCycle(tx, id, patch.parentId);
+    }
+    if (patch.name !== undefined || patch.parentId !== undefined) {
+      await assertCategoryNameFree(tx, patch.name ?? before.name, parentId, id);
+    }
+    const [after] = await mapUnique(() =>
+      tx
+        .update(categories)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(categories.id, id))
+        .returning(),
+    );
+    if (!after) throw notFound('Category');
+    await audit(tx, actor(user, ctx), 'category.update', 'category', id, before, after);
+  });
   return getCategory(db, id);
 }
 
@@ -179,7 +227,7 @@ export async function patchCategory(
 // Purchases arrive in Sprint 2; until then every supplier has no purchase history.
 const NO_PURCHASES = { purchaseCount: 0, lastPurchaseAt: null } as const;
 
-// suppliers.name has no unique constraint, so duplicates are rejected here.
+// Friendly pre-check; suppliers_name_unique is the authority.
 async function assertSupplierNameFree(db: Db, name: string, exceptId?: string): Promise<void> {
   const conds = [eq(suppliers.name, name)];
   if (exceptId) conds.push(ne(suppliers.id, exceptId));
@@ -197,11 +245,13 @@ export async function listSuppliers(db: Db): Promise<SupplierOut[]> {
 }
 
 export async function createSupplier(db: Db, user: AuthUser, input: SupplierInput, ctx: ReqCtx): Promise<SupplierOut> {
-  await assertSupplierNameFree(db, input.name);
-  const [row] = await mapUnique(() => db.insert(suppliers).values(input).returning());
-  if (!row) throw new Error('supplier insert returned no row');
-  await audit(db, actor(user, ctx), 'supplier.create', 'supplier', row.id, null, row);
-  return toSupplier(row, NO_PURCHASES);
+  return db.transaction(async (tx) => {
+    await assertSupplierNameFree(tx, input.name);
+    const [row] = await mapUnique(() => tx.insert(suppliers).values(input).returning());
+    if (!row) throw new Error('supplier insert returned no row');
+    await audit(tx, actor(user, ctx), 'supplier.create', 'supplier', row.id, null, row);
+    return toSupplier(row, NO_PURCHASES);
+  });
 }
 
 export async function patchSupplier(
@@ -211,17 +261,30 @@ export async function patchSupplier(
   patch: SupplierPatch,
   ctx: ReqCtx,
 ): Promise<SupplierOut> {
-  const [before]: (SupplierRow | undefined)[] = await db.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
-  if (!before) throw notFound('Supplier');
-  if (patch.name !== undefined) await assertSupplierNameFree(db, patch.name, id);
-  const [after] = await mapUnique(() =>
-    db
-      .update(suppliers)
-      .set({ ...patch, updatedAt: new Date() })
-      .where(eq(suppliers.id, id))
-      .returning(),
-  );
-  if (!after) throw notFound('Supplier');
-  await audit(db, actor(user, ctx), 'supplier.update', 'supplier', id, before, after);
-  return toSupplier(after, NO_PURCHASES);
+  return db.transaction(async (tx) => {
+    const [before]: (SupplierRow | undefined)[] = await tx.select().from(suppliers).where(eq(suppliers.id, id)).limit(1);
+    if (!before) throw notFound('Supplier');
+    if (patch.name !== undefined) await assertSupplierNameFree(tx, patch.name, id);
+    const [after] = await mapUnique(() =>
+      tx
+        .update(suppliers)
+        .set({ ...patch, updatedAt: new Date() })
+        .where(eq(suppliers.id, id))
+        .returning(),
+    );
+    if (!after) throw notFound('Supplier');
+    await audit(tx, actor(user, ctx), 'supplier.update', 'supplier', id, before, after);
+    return toSupplier(after, NO_PURCHASES);
+  });
+}
+
+export type SellerSupplierOut = Omit<SupplierOut, 'phone' | 'notes'>;
+
+/** SELLERs may see suppliers but not their contact details or internal notes. */
+export function toSupplierForRole(supplier: SupplierOut, role: Role): SupplierOut | SellerSupplierOut {
+  if (role !== 'SELLER') return supplier;
+  const rest: Partial<SupplierOut> = { ...supplier };
+  delete rest.phone;
+  delete rest.notes;
+  return rest as SellerSupplierOut;
 }

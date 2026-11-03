@@ -19,7 +19,10 @@ export const categoryBody = z
     isActive: z.boolean().optional(),
   })
   .strict();
-export const categoryPatch = categoryBody.partial().strict();
+export const categoryPatch = categoryBody
+  .extend({ parentId: uuidSchema.nullable().optional() })
+  .partial()
+  .strict();
 export type CategoryInput = z.infer<typeof categoryBody>;
 export type CategoryPatch = z.infer<typeof categoryPatch>;
 

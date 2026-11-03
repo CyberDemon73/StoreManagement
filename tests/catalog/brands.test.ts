@@ -33,7 +33,7 @@ describe('brands', () => {
     expect(rows[0]?.after).toMatchObject({ name: 'Northline' });
   });
 
-  it('list includes productCount (ACTIVE products) and variantCount', async () => {
+  it('list includes productCount (ACTIVE products) and variantCount (active variants of ACTIVE products)', async () => {
     const { db, cookie } = await manager();
     const { brand, category } = await seedCatalog(db);
     let res = await call(GET, { path: '/api/v1/brands', cookie });
@@ -46,7 +46,9 @@ describe('brands', () => {
     const p = await createProductDirect(db, { name: 'Chino', baseSku: 'NO-CHI', brandId: brand.id, categoryId: category.id, defaultPrice: 1000 });
     await createVariantDirect(db, { productId: p.id, size: 'M', colorName: 'Navy', sku: 'NO-CHI-M-NAVY', sellPrice: 1000 });
     await createVariantDirect(db, { productId: p.id, size: 'L', colorName: 'Navy', sku: 'NO-CHI-L-NAVY', sellPrice: 1000 });
-    await createProductDirect(db, { name: 'Old', baseSku: 'NO-OLD', brandId: brand.id, categoryId: category.id, defaultPrice: 1000, status: 'ARCHIVED' });
+    await createVariantDirect(db, { productId: p.id, size: 'XL', colorName: 'Navy', sku: 'NO-CHI-XL-NAVY', sellPrice: 1000, isActive: false });
+    const old = await createProductDirect(db, { name: 'Old', baseSku: 'NO-OLD', brandId: brand.id, categoryId: category.id, defaultPrice: 1000, status: 'ARCHIVED' });
+    await createVariantDirect(db, { productId: old.id, size: 'M', colorName: 'Navy', sku: 'NO-OLD-M-NAVY', sellPrice: 1000 });
 
     res = await call(GET, { path: '/api/v1/brands', cookie });
     expect((await res.json()).find((b: { id: string }) => b.id === brand.id)).toMatchObject({
