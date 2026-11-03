@@ -96,3 +96,6 @@ Format: `YYYY-MM-DD — decision — why — alternatives considered`
 - 2026-11-07 — Product CSV `category` is the full path `Parent/Child`; import accepts a path or a unique leaf name; ambiguous leaf → row error asking for the path
 - 2026-11-07 — Import reverses `toCsv` neutralisation at cell start and after `;`, so exports round-trip exactly
 - 2026-11-07 — Product export covers ACTIVE products only; an import row matching an archived product → "unarchive it first"; a category different from the existing product's → row error (no re-categorising via CSV); negative opening qty only when `allowNegativeStock`
+- 2026-11-07 — Data export streams a zip (fflate Zip/ZipDeflate) fed by primary-key keyset pages of 1,000 rows — stays under Vercel's 4.5 MB non-streamed response cap and bounded memory; audited when the stream finishes (`completed: false` on abort) — buffered zip (rejected after review)
+- 2026-11-07 — Weekly backups use `BACKUP_BLOB_READ_WRITE_TOKEN` (a PRIVATE Blob store; falls back to BLOB_READ_WRITE_TOKEN) and keep 12 weeks (best-effort prune after a successful upload); `CRON_SECRET` ≥ 32 chars
+- 2026-11-07 — CI fails on schema/migration drift (`db:generate` + `git diff --exit-code drizzle/`) and the race job fails, not skips, without a real Postgres (`CI_REQUIRE_PG=1`); secrets scan has hex, `npg_` and `*PASSWORD` rules
