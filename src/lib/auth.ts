@@ -5,6 +5,7 @@ import { sessions, settings, users } from '@/db/schema';
 import { AppError } from './errors';
 import { errorResponse, getClientIp, getUserAgent } from './http';
 import { can, type Permission, type Role } from './permissions';
+import { bumpAnalyticsVersion } from './cache';
 import { apiUserLimiter, enforce } from './ratelimit';
 
 export const SESSION_COOKIE = '__Host-as_session';
@@ -162,6 +163,11 @@ function requestId(req: Request): string {
   return crypto.randomUUID();
 }
 
+function isAuthPath(req: Request): boolean {
+  const path = new URL(req.url).pathname;
+  return path.startsWith('/api/v1/auth/') || path === '/api/v1/setup';
+}
+
 /**
  * Wrap a route handler: resolve the session, enforce the permission, apply the per-user
  * rate limit, and turn every thrown error into the uniform envelope.
@@ -187,6 +193,8 @@ export function withAuth(opts: AuthOptions, handler: (req: Request, ctx: Handler
         req: { ip: getClientIp(req), userAgent: getUserAgent(req), requestId: id },
       });
       res.headers.set('X-Request-Id', id);
+      // Any committed business mutation can change a report: invalidate cached analytics.
+      if (req.method !== 'GET' && res.status < 400 && !isAuthPath(req)) await bumpAnalyticsVersion();
       return res;
     } catch (err) {
       return errorResponse(err, id);

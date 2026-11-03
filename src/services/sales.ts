@@ -1,4 +1,4 @@
-import { and, desc, eq, exists, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, exists, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { brands, products, returnItems, returns, saleItems, sales, users, variants, type SaleRow } from '@/db/schema';
 import { audit } from '@/lib/audit';
@@ -14,6 +14,7 @@ import { escapeLike } from './products-list';
 import { computeTotals, sellerCapExceeded } from './sale-math';
 import { getSettings } from './settings';
 import { applyMovement, lockVariants, nextNumber } from './stock';
+import { localDayBounds } from '@/analytics/range';
 
 // First colour of the product's active variants (same rule as the catalogue serializers).
 const productTint = sql<string | null>`(
@@ -196,8 +197,6 @@ export async function getSale(db: Db, user: AuthUser, id: string): Promise<SaleO
   return loadSale(db, id);
 }
 
-const dayStart = (d: string) => new Date(`${d}T00:00:00.000Z`);
-
 /** Newest first. Sellers only ever see their own sales; a foreign `sellerId` is refused. */
 export async function listSales(db: Db, user: AuthUser, query: SalesQuery): Promise<Paginated<SaleOut>> {
   const { page, pageSize, from, to, paymentMethod, status, q, productId } = query;
@@ -211,9 +210,10 @@ export async function listSales(db: Db, user: AuthUser, query: SalesQuery): Prom
   if (sellerId) where.push(eq(sales.sellerId, sellerId));
   if (paymentMethod) where.push(eq(sales.paymentMethod, paymentMethod));
   if (status) where.push(eq(sales.status, status));
-  if (from) where.push(gte(sales.createdAt, dayStart(from)));
-  // `to` is inclusive: everything before the start of the following day.
-  if (to) where.push(lt(sales.createdAt, new Date(dayStart(to).getTime() + 86_400_000)));
+  // Local days in the store timezone; `to` is inclusive (CLAUDE.md rule 8).
+  const bounds = await localDayBounds(db, from, to);
+  if (bounds.start) where.push(sql`${sales.createdAt} >= ${bounds.start}`);
+  if (bounds.end) where.push(sql`${sales.createdAt} < ${bounds.end}`);
   if (q) {
     const like = `%${escapeLike(q)}%`;
     where.push(

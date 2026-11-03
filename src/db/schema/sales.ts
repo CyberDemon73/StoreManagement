@@ -67,20 +67,24 @@ export const returns = pgTable(
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('returns_sale_id_idx').on(t.saleId)],
+  (t) => [index('returns_sale_id_idx').on(t.saleId), index('returns_created_at_idx').on(t.createdAt)],
 );
 
-export const returnItems = pgTable('return_items', {
-  id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
-  returnId: uuid('return_id')
-    .notNull()
-    .references(() => returns.id, { onDelete: 'cascade' }),
-  saleItemId: uuid('sale_item_id')
-    .notNull()
-    .references(() => saleItems.id, { onDelete: 'cascade' }),
-  qty: integer('qty').notNull(),
-  restock: boolean('restock').notNull(),
-});
+export const returnItems = pgTable(
+  'return_items',
+  {
+    id: uuid('id').primaryKey().default(sql`gen_random_uuid()`),
+    returnId: uuid('return_id')
+      .notNull()
+      .references(() => returns.id, { onDelete: 'cascade' }),
+    saleItemId: uuid('sale_item_id')
+      .notNull()
+      .references(() => saleItems.id, { onDelete: 'cascade' }),
+    qty: integer('qty').notNull(),
+    restock: boolean('restock').notNull(),
+  },
+  (t) => [index('return_items_return_id_idx').on(t.returnId), index('return_items_sale_item_id_idx').on(t.saleItemId)],
+);
 
 /** Carts held at the till: client convenience only; totals are always recomputed at checkout. */
 export const parkedSales = pgTable(

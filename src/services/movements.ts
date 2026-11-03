@@ -1,4 +1,4 @@
-import { and, desc, eq, gte, inArray, lt, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { alias } from 'drizzle-orm/pg-core';
 import { products, purchases, returns, sales, stockCounts, stockMovements, users, variants } from '@/db/schema';
@@ -6,6 +6,7 @@ import type { MovementsQuery } from '@/schemas/movements';
 import { toMovement, type MovementJoinedRow, type StockMovementOut } from '@/serializers/movements';
 import type { Paginated } from './audit';
 import { escapeLike } from './products-list';
+import { localDayBounds } from '@/analytics/range';
 
 // A return's label is the number of the sale it refunds, so `sales` is joined twice.
 const returnSales = alias(sales, 'return_sales');
@@ -49,8 +50,6 @@ function joined<E extends Record<string, SQL>>(db: Db, extra: E) {
     .leftJoin(returnSales, eq(returnSales.id, returns.saleId));
 }
 
-const dayStart = (d: string) => new Date(`${d}T00:00:00.000Z`);
-
 export async function listMovements(db: Db, query: MovementsQuery): Promise<Paginated<StockMovementOut>> {
   const { page, pageSize, variantId, productId, type, from, to, userId, q } = query;
   const where: SQL[] = [];
@@ -58,9 +57,10 @@ export async function listMovements(db: Db, query: MovementsQuery): Promise<Pagi
   if (productId) where.push(eq(variants.productId, productId));
   if (type) where.push(eq(stockMovements.type, type));
   if (userId) where.push(eq(stockMovements.userId, userId));
-  if (from) where.push(gte(stockMovements.createdAt, dayStart(from)));
-  // `to` is inclusive: everything before the start of the following day.
-  if (to) where.push(lt(stockMovements.createdAt, new Date(dayStart(to).getTime() + 86_400_000)));
+  // Local days in the store timezone; `to` is inclusive (CLAUDE.md rule 8).
+  const bounds = await localDayBounds(db, from, to);
+  if (bounds.start) where.push(sql`${stockMovements.createdAt} >= ${bounds.start}`);
+  if (bounds.end) where.push(sql`${stockMovements.createdAt} < ${bounds.end}`);
   if (q) {
     const like = `%${escapeLike(q)}%`;
     where.push(sql`(${variants.sku} ilike ${like} escape '\\' or ${products.name} ilike ${like} escape '\\')`);

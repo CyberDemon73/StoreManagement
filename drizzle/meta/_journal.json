@@ -50,6 +50,13 @@
       "when": 1793696241894,
       "tag": "0006_legal_moon_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1793711081098,
+      "tag": "0007_salty_moon_knight",
+      "breakpoints": true
     }
   ]
 }
