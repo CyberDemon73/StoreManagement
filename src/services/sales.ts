@@ -53,7 +53,8 @@ export async function loadSalesOut(db: Db, rows: SaleRow[], sellerNames: Map<str
     .innerJoin(products, eq(products.id, variants.productId))
     .innerJoin(brands, eq(brands.id, products.brandId))
     .where(inArray(saleItems.saleId, ids))
-    .orderBy(saleItems.id);
+    // sale_items ids are random UUIDs; sku gives receipts and the UI a stable line order.
+    .orderBy(variants.sku, saleItems.id);
   const returnRows = await db.select().from(returns).where(inArray(returns.saleId, ids)).orderBy(returns.createdAt, returns.id);
   const returnItemRows =
     returnRows.length === 0

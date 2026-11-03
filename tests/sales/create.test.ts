@@ -35,8 +35,9 @@ describe('POST /sales', () => {
     const body = await res.json();
     expect(body).toMatchObject({ number: 'AS-000001', subtotal: 3000, discount: 0, total: 3000, status: 'COMPLETED', paymentMethod: 'CASH', sellerName: 'Sam', customerName: 'Nour', returns: [] });
     expect(body.items).toHaveLength(2);
-    expect(body.items[0]).toMatchObject({ variantId: a.id, productName: 'Chino Slim', sku: 'NO-CHI-S-BLACK', qty: 2, unitPrice: 1000, lineTotal: 2000, returnedQty: 0 });
-    expect(body.items[0].tint).toBe('#000000');
+    const lineA = body.items.find((i: { variantId: string }) => i.variantId === a.id);
+    expect(lineA).toMatchObject({ variantId: a.id, productName: 'Chino Slim', sku: 'NO-CHI-S-BLACK', qty: 2, unitPrice: 1000, lineTotal: 2000, returnedQty: 0 });
+    expect(lineA.tint).toBe('#000000');
     expectNoSellerKeys(body);
     expect(await qty(a.id)).toBe(8);
     expect(await qty(b.id)).toBe(4);
