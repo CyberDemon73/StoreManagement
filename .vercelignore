@@ -1,0 +1,9 @@
+# Never upload local secrets or scratch files to Vercel.
+.env
+.env.*
+!.env.example
+session.txt
+.next
+node_modules
+.superpowers
+coverage
