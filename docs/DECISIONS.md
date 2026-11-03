@@ -79,3 +79,4 @@ Format: `YYYY-MM-DD — decision — why — alternatives considered`
 - 2026-11-06 — `sessionAbsoluteDays` max 30 (SECURITY.md); lowering it applies to new sessions only — shortening live sessions deferred to the Sprint 6 purge cron
 - 2026-11-06 — Notifications are per user with a partial unique (userId, dedupeKey) where unread; LOW_STOCK fires only when an operation lowers a variant to/below its threshold; new-device alerts name the browser, not the raw user agent; retention purge is a Sprint 6 cron
 - 2026-11-06 — Email logs never include the recipient address (PII); they log the subject only
+- 2026-11-06 — "Never accepted an invite" = has an INVITE token row and `lastLoginAt` is null (accept always sets it); a re-sent invite marks the old token used, so "no used INVITE token" would wrongly re-enable a pending invite as ACTIVE. Re-sending an invite does not notify admins; the acting admin is not notified of their own reset
