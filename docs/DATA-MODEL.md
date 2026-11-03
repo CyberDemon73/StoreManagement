@@ -80,7 +80,7 @@ sales
   created_at
   index(created_at), index(seller_id, created_at), index(status)
 sale_items
-  id, sale_id fk, variant_id fk, qty int, unit_price int, unit_cost int (snapshot), line_total int
+  id, sale_id fk, variant_id fk, qty int, unit_price int, unit_cost int (snapshot), line_total int, returned_qty int default 0
   index(sale_id), index(variant_id)
 
 returns
@@ -89,7 +89,7 @@ return_items
   id, return_id fk, sale_item_id fk, qty int, restock bool
 
 parked_sales
-  id, user_id fk, payload jsonb (cart), created_at, expires_at   -- max 3 per user, 24h TTL
+  id, user_id fk, label text, payload jsonb (cart), created_at, expires_at   -- max 3 per user, 24h TTL, purged on read
 ```
 
 ## system

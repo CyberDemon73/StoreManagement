@@ -130,10 +130,14 @@ export async function applyMovements(tx: Db, inputs: MovementInput[]): Promise<M
   return out;
 }
 
-export type NumberPrefix = 'PO' | 'SC' | 'AS';
+/** Document number prefix: PO (purchases), SC (counts), or settings.saleNumberPrefix for sales. */
+export type NumberPrefix = string;
 
 /** Allocate the next document number (e.g. PO-000001) under a row lock on sale_counters. */
 export async function nextNumber(tx: Db, prefix: NumberPrefix): Promise<string> {
+  if (!/^[A-Z]{1,6}$/.test(prefix)) {
+    throw new AppError('VALIDATION', 'Invalid document prefix', { fields: { prefix: 'Use 1–6 uppercase letters' } });
+  }
   await tx.execute(sql`insert into sale_counters (prefix) values (${prefix}) on conflict (prefix) do nothing`);
   const locked = (await tx.execute(sql`select next from sale_counters where prefix = ${prefix} for update`)) as { rows: { next: number }[] };
   const n = Number(locked.rows[0]?.next ?? 1);

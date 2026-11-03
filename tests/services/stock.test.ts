@@ -154,3 +154,12 @@ describe('applyMovement int4 lower bound', () => {
     expect((err as AppError).code).toBe('VALIDATION');
   });
 });
+
+describe('nextNumber with settings prefixes (sprint 3)', () => {
+  it('accepts any short uppercase prefix and rejects bad ones', async () => {
+    const db = getDb();
+    expect(await db.transaction((tx) => nextNumber(tx, 'AS'))).toBe('AS-000001');
+    expect(await db.transaction((tx) => nextNumber(tx, 'AVS'))).toBe('AVS-000001');
+    await expect(db.transaction((tx) => nextNumber(tx, 'bad!'))).rejects.toMatchObject({ code: 'VALIDATION' });
+  });
+});
