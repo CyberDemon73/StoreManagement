@@ -14,21 +14,12 @@ import { homeFor, useAuth } from '@/lib/auth-context';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Checkbox, Field, Input } from '@/components/ui/Field';
-import { Badge } from '@/components/ui/Badge';
-
-const DEMO = [
-  { email: 'omar@avenue.eg', role: 'Admin' },
-  { email: 'salma@avenue.eg', role: 'Manager' },
-  { email: 'nour@avenue.eg', role: 'Seller + Manager' },
-  { email: 'hana@avenue.eg', role: 'Disabled' },
-  { email: 'locked@avenue.eg', role: 'Locked out' },
-];
 
 export function LoginScreen() {
   const auth = useAuth();
   const router = useRouter();
   const params = useSearchParams();
-  const [email, setEmail] = useState('omar@avenue.eg');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPw, setShowPw] = useState(false);
   const [remember, setRemember] = useState(true);
@@ -90,14 +81,6 @@ export function LoginScreen() {
           <p className="text-center text-xs text-ink-2">Sellers: ask your manager for an invite link.</p>
         </form>
       </Card>
-      {params.get('demo') && (
-        <Card className="mt-4 p-4">
-          <p className="text-[13px] font-medium">Demo accounts <span className="text-ink-2">· any password of 10+ characters</span></p>
-          <ul className="mt-2 flex flex-col gap-1">
-            {DEMO.map((d) => <li key={d.email}><button type="button" onClick={() => { setEmail(d.email); setPassword('correct-horse-battery'); }} className="flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm hover:bg-surface-2"><span className="tabular">{d.email}</span><Badge>{d.role}</Badge></button></li>)}
-          </ul>
-        </Card>
-      )}
     </>
   );
 }
