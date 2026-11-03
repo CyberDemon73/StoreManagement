@@ -16,6 +16,7 @@ import { Button, type ButtonProps } from '@/components/ui/Button';
 import { Sheet } from '@/components/ui/Overlay';
 import { Input } from '@/components/ui/Field';
 import type { VariantWithProduct } from '@/types';
+import { playScanSound, unlockScanSound } from '@/lib/scan-sound';
 
 const FORMATS = ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128', 'code_39', 'qr_code'];
 const DUPLICATE_WINDOW_MS = 1500;
@@ -30,7 +31,7 @@ export function BarcodeScannerButton({ onScan, label = 'Scan', ...btn }: { onSca
   const [open, setOpen] = useState(false);
   return (
     <>
-      <Button leading={<ScanLine />} onClick={() => setOpen(true)} {...btn}>{label}</Button>
+      <Button leading={<ScanLine />} onClick={() => { unlockScanSound(); setOpen(true); }} {...btn}>{label}</Button>
       {open && <ScannerSheet onClose={() => setOpen(false)} onScan={(v) => { onScan(v); setOpen(false); }} />}
     </>
   );
@@ -42,6 +43,10 @@ function ScannerSheet({ onClose, onScan }: { onClose: () => void; onScan: (v: Va
   const stopRef = useRef<() => void>(() => undefined);
   const lastRef = useRef<{ code: string; at: number }>({ code: '', at: 0 });
   const busyRef = useRef(false);
+  // Parents pass a new onScan on every render; reading it through a ref keeps the camera effect
+  // from tearing down and restarting the stream (which stopped decoding from ever settling).
+  const onScanRef = useRef(onScan);
+  onScanRef.current = onScan;
   const [camera, setCamera] = useState<CameraState>('idle');
   const [engine, setEngine] = useState<'native' | 'zxing' | null>(null);
   const [code, setCode] = useState('');
@@ -56,17 +61,19 @@ function ScannerSheet({ onClose, onScan }: { onClose: () => void; onScan: (v: Va
     setStatus(null);
     try {
       const v = await api.variants.lookup(/^\d+$/.test(c) ? { barcode: c } : { sku: c });
+      playScanSound('ok');
       if (navigator.vibrate) navigator.vibrate(40);
-      onScan(v);
+      onScanRef.current(v);
       return true;
     } catch (e) {
+      playScanSound('miss');
       setStatus({ kind: 'error', text: e instanceof ApiError && e.code === 'NOT_FOUND' ? `Not found: ${c}. Keep scanning or type the code.` : (e as Error).message });
       return false;
     } finally {
       busyRef.current = false;
       setBusy(false);
     }
-  }, [onScan]);
+  }, []);
 
   const onDetected = useCallback((raw: string) => {
     const now = Date.now();
@@ -85,7 +92,11 @@ function ScannerSheet({ onClose, onScan }: { onClose: () => void; onScan: (v: Va
     const start = async () => {
       let stream: MediaStream;
       try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } }, audio: false });
+        // 1D barcodes need resolution and focus; the browser default (~640×480) is often too blurry.
+        stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false });
+        const track = stream.getVideoTracks()[0];
+        const caps = (track?.getCapabilities?.() ?? {}) as { focusMode?: string[] };
+        if (track && caps.focusMode?.includes('continuous')) void track.applyConstraints({ advanced: [{ focusMode: 'continuous' } as MediaTrackConstraintSet] }).catch(() => undefined);
       } catch (e) {
         if (cancelled) return;
         setCamera((e as DOMException).name === 'NotAllowedError' ? 'denied' : 'unavailable');
@@ -101,23 +112,29 @@ function ScannerSheet({ onClose, onScan }: { onClose: () => void; onScan: (v: Va
       if (Detector) {
         setEngine('native');
         const detector = new Detector({ formats: FORMATS });
+        let inFlight = false;
         const timer = window.setInterval(async () => {
-          if (video.readyState < 2) return;
+          if (video.readyState < 2 || inFlight) return;
+          inFlight = true;
           try {
             const found = await detector.detect(video);
             const first = found[0];
             if (first?.rawValue) onDetected(first.rawValue);
-          } catch { /* frame not ready */ }
-        }, 100);
+          } catch { /* frame not ready */ } finally { inFlight = false; }
+        }, 120);
         stopRef.current = () => window.clearInterval(timer);
         return;
       }
 
       setEngine('zxing');
       try {
-        const { BrowserMultiFormatReader } = await import('@zxing/browser');
+        const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([import('@zxing/browser'), import('@zxing/library')]);
         if (cancelled) return;
-        const reader = new BrowserMultiFormatReader();
+        const hints = new Map<unknown, unknown>([
+          [DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.EAN_13, BarcodeFormat.EAN_8, BarcodeFormat.UPC_A, BarcodeFormat.UPC_E, BarcodeFormat.CODE_128, BarcodeFormat.CODE_39, BarcodeFormat.QR_CODE]],
+          [DecodeHintType.TRY_HARDER, true],
+        ]);
+        const reader = new BrowserMultiFormatReader(hints as Map<never, unknown>, { delayBetweenScanAttempts: 100, delayBetweenScanSuccess: 500 });
         const controls = await reader.decodeFromStream(stream, video, (result) => { if (result) onDetected(result.getText()); });
         stopRef.current = () => controls.stop();
       } catch {
@@ -134,7 +151,9 @@ function ScannerSheet({ onClose, onScan }: { onClose: () => void; onScan: (v: Va
       streamRef.current = null;
       if (video) video.srcObject = null;
     };
-  }, [onDetected]);
+    // Mount once: callbacks are read through refs/stable hooks, so the stream is never restarted.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const cameraMessage = camera === 'denied' ? 'Camera access was blocked. Allow it in the browser settings, or type the code below.'
     : camera === 'unavailable' ? (window.isSecureContext ? 'No camera found on this device. Type the code below.' : 'The camera needs HTTPS. Open the app over https:// (or run next dev --experimental-https) — or type the code below.')
