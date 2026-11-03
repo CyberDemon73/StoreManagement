@@ -180,6 +180,14 @@ export const ROUTES: RouteSpec[] = [
   { method: 'GET', path: '/variants/lookup', access: 'products.read', load: () => import('@/app/api/v1/variants/lookup/route') },
   { method: 'GET', path: '/variants/search', access: 'products.read', load: () => import('@/app/api/v1/variants/search/route') },
   // --- uploads ---
+  // --- sales ---
+  {
+    method: 'POST',
+    path: '/sales',
+    access: 'sales.create',
+    load: () => import('@/app/api/v1/sales/route'),
+    sampleBody: { items: [{ variantId: '00000000-0000-4000-8000-000000000001', qty: 1 }], paymentMethod: 'CASH' },
+  },
   // --- stock ---
   {
     method: 'POST',
