@@ -160,3 +160,6 @@ export interface ParkedSaleOut { id; cart: unknown; parkedAt; label }
 ## Deferred
 - `?format=pdf` (HTML print is the spec's "keep simple" option).
 - Customer records (phase 2).
+
+## Outcome (2026-11-05)
+All 8 tasks complete on branch `sprint-3` (Tasks 3–7 by three parallel implementers). Final review by two reviewers found one Critical (seller cost leak) and five Important findings; all fixed test-first in one pass, plus four minor hardening items. The frontend session verified checkout, receipt and sales list against the owner's Neon database. Deferred items in `docs/plans/ledgers/sprint-3-ledger.md`.
