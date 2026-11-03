@@ -49,10 +49,14 @@ export function PosScreen() {
   const [details, setDetails] = useState<Record<string, ProductDetail>>({});
   const [loadingIds, setLoadingIds] = useState<Set<string>>(new Set());
   useEffect(() => { if (pinned.data) setDetails((d) => ({ ...d, [pinned.data!.id]: pinned.data! })); }, [pinned.data]);
-  const loadDetail = useCallback(async (id: string) => {
+  const loadDetail = useCallback(async (id: string, silent = false) => {
     setLoadingIds((s) => new Set(s).add(id));
     try { const d = await api.products.get(id); setDetails((prev) => ({ ...prev, [id]: d })); }
-    catch (e) { toast({ kind: 'error', title: "Couldn't load sizes", body: (e as Error).message }); }
+    catch (e) {
+      // Background prefetch fails quietly (the card loads again on tap); a tap shows the error.
+      if (!silent) toast({ kind: 'error', title: "Couldn't load sizes", body: (e as Error).message });
+      else prefetched.current.delete(id);
+    }
     finally { setLoadingIds((s) => { const n = new Set(s); n.delete(id); return n; }); }
   }, [toast]);
 
@@ -61,6 +65,25 @@ export function PosScreen() {
     if (!pinned.data || dq || categoryId) return list;
     return [pinned.data, ...list.filter((p) => p.id !== pinned.data!.id)];
   }, [products.data, pinned.data, dq, categoryId]);
+
+  /* ---- load sizes & colours for every visible product up front (4 at a time) ----
+     Cards used to wait for a touch/hover before loading their sizes, so they sat on skeletons. */
+  const prefetched = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    const missing = rows.map((p) => p.id).filter((id) => !details[id] && !prefetched.current.has(id));
+    if (missing.length === 0) return;
+    for (const id of missing) prefetched.current.add(id);
+    let next = 0;
+    const worker = async () => {
+      while (next < missing.length) {
+        const id = missing[next++]!;
+        await loadDetail(id, true);
+      }
+    };
+    void Promise.all(Array.from({ length: Math.min(4, missing.length) }, worker));
+    // `details` is read but deliberately not a dependency: each id is fetched once per page visit.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, loadDetail]);
 
   /* ---- '/' focuses search ---- */
   const searchWrap = useRef<HTMLDivElement>(null);

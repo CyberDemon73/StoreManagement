@@ -79,12 +79,12 @@ export function CartPanel({ cart, actions, preview, isSeller, settings, stockErr
           <span className="text-ink-2">Subtotal</span>
           <span className="tabular ml-auto">{formatMoney(preview.subtotal)}</span>
         </div>
-        <div className="flex items-center gap-2 text-sm">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm">
           <label htmlFor="pos-discount" className="text-ink-2">Discount</label>
           <Segmented size="sm" aria-label="Discount type" value={cart.discount.type} onChange={(t) => actions.setDiscount({ type: t, value: cart.discount.value })} options={[{ value: 'PCT', label: '%' }, { value: 'AMOUNT', label: 'EGP' }]} />
-          <Input id="pos-discount" size="sm" align="right" inputMode="decimal" wrapperClassName="w-[88px]" aria-label="Discount value" value={cart.discount.value === 0 ? '' : String(cart.discount.value)} placeholder="0"
+          <Input id="pos-discount" size="sm" align="right" inputMode="decimal" wrapperClassName="w-[72px] min-w-0 shrink" aria-label="Discount value" value={cart.discount.value === 0 ? '' : String(cart.discount.value)} placeholder="0"
             onChange={(e) => { const n = parseFloat(e.target.value.replace(/[^0-9.]/g, '')); actions.setDiscount({ type: cart.discount.type, value: Number.isFinite(n) ? n : 0 }); }} />
-          <span className="tabular ml-auto text-danger-ink">−{formatMoney(preview.discount)}</span>
+          <span className="tabular ml-auto whitespace-nowrap text-danger-ink">−{formatMoney(preview.discount)}</span>
         </div>
         {preview.capHit && isSeller && <p role="alert" className="text-xs text-warn-ink">Sellers can discount up to {preview.cap}%. Ask a manager for more.</p>}
 

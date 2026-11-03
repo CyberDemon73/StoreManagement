@@ -49,3 +49,19 @@ describe('in-memory rate limiter', () => {
     }
   });
 });
+
+describe('fail-open when the limiter backend is down', () => {
+  it('lets the request through (and does not throw) when Redis errors', async () => {
+    const { withFailOpen } = await import('@/lib/ratelimit');
+    const broken = withFailOpen('login', { limit: async () => { throw new Error('ECONNREFUSED'); } });
+    const r = await broken.limit('someone');
+    expect(r.success).toBe(true);
+    await expect(enforce(broken, 'someone')).resolves.toBeUndefined();
+  });
+
+  it('still refuses when the backend answers "limited"', async () => {
+    const { withFailOpen } = await import('@/lib/ratelimit');
+    const limited = withFailOpen('login', { limit: async () => ({ success: false, remaining: 0, reset: Date.now() + 1000 }) });
+    await expect(enforce(limited, 'someone')).rejects.toBeInstanceOf(AppError);
+  });
+});

@@ -17,6 +17,24 @@ export interface Limiter {
 
 let warnedMemoryFallback = false;
 
+/**
+ * If the shared limiter backend (Upstash) is unreachable, let the request through and log an
+ * error instead of failing every request: availability beats rate limiting for a short outage,
+ * and login brute force is still stopped by the database-backed account lockout.
+ */
+export function withFailOpen(name: string, inner: Limiter): Limiter {
+  return {
+    async limit(key) {
+      try {
+        return await inner.limit(key);
+      } catch (err) {
+        logger.error({ err: { message: (err as Error).message }, limiter: name }, 'rate limiter unavailable, allowing request');
+        return { success: true, remaining: 1, reset: Date.now() };
+      }
+    },
+  };
+}
+
 // Shared across in-memory limiters so tests can wipe state between cases.
 const memoryBuckets = new Map<string, number[]>();
 
@@ -55,7 +73,7 @@ function upstashLimiter(name: string, tokens: number, windowMs: number, url: str
 export function createLimiter(name: string, tokens: number, windowMs: number): Limiter {
   const env = getEnv();
   const { UPSTASH_REDIS_REST_URL: url, UPSTASH_REDIS_REST_TOKEN: token } = env;
-  if (url && token) return upstashLimiter(name, tokens, windowMs, url, token);
+  if (url && token) return withFailOpen(name, upstashLimiter(name, tokens, windowMs, url, token));
   if (env.NODE_ENV === 'production' && !warnedMemoryFallback) {
     // Per-instance memory is not shared across serverless instances: limits are effectively off.
     warnedMemoryFallback = true;
