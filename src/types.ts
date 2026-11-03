@@ -142,7 +142,8 @@ export interface StockMovement {
   unitCost?: number;
   reference?: MovementReference;
   reason?: string;
-  userId: string;
+  /** Null for system-generated rows. */
+  userId: string | null;
   userName: string;
   createdAt: string;
 }

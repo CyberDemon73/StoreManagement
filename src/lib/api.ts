@@ -24,7 +24,7 @@ import type {
  * the mock everywhere for a demo without a database.
  */
 export const USE_MOCK_ALL = process.env.NEXT_PUBLIC_USE_MOCK === '1';
-const LIVE_PREFIXES = ['/auth/', '/setup', '/products', '/variants', '/brands', '/categories', '/suppliers', '/uploads'];
+const LIVE_PREFIXES = ['/auth/', '/setup', '/products', '/variants', '/brands', '/categories', '/suppliers', '/uploads', '/stock'];
 const MOCK_ONLY = [/^\/products\/(export|import)/, /^\/variants\/[^/]+\/sold/, /^\/me\//];
 export function isLive(path: string): boolean {
   if (USE_MOCK_ALL) return false;
