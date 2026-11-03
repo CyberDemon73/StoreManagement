@@ -12,6 +12,7 @@ import type { Paginated } from './audit';
 import { actorOf } from './products';
 import { escapeLike } from './products-list';
 import { computeTotals, sellerCapExceeded } from './sale-math';
+import { notifyLowStock } from './notifications';
 import { getSettings } from './settings';
 import { applyMovement, lockVariants, nextNumber } from './stock';
 import { localDayBounds } from '@/analytics/range';
@@ -174,6 +175,7 @@ export async function createSale(db: Db, user: AuthUser, input: SaleCreateInput,
     for (const [variantId, qty] of requested) {
       await applyMovement(tx, { variantId, type: 'SALE', qtyDelta: -qty, reference: { kind: 'sale', id: sale.id }, reason: `Sale ${number}`, userId: user.id });
     }
+    await notifyLowStock(tx, [...requested.keys()]);
 
     const out = await loadSale(tx, sale.id);
     await audit(tx, actorOf(user, ctx), 'sale.create', 'sale', sale.id, null, out);

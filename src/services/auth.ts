@@ -26,6 +26,7 @@ import type { ForgotInput, LoginInput, ResetInput, SetupInput } from '@/schemas/
 import { toPublicSettings, type PublicSettings } from '@/serializers/settings';
 import { toPublicUser, type PublicUser } from '@/serializers/user';
 import { clearFailures, getLockRemaining, recordFailure } from './lockout';
+import { recordLoginDevice } from './notifications';
 import { ensureSettings, getSettings } from './settings';
 
 function tokenMatches(given: string, expected: string | undefined): boolean {
@@ -101,6 +102,7 @@ export async function login(
   await clearFailures(db, input.email);
   await db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, user.id));
   if (currentSessionId) await revokeSession(db, currentSessionId);
+  await recordLoginDevice(db, user.id, ctx.userAgent);
   const session = await createSession(db, { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent, remember: input.remember });
   await audit(db, { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent }, 'auth.login', 'user', user.id, null, {
     remember: input.remember,

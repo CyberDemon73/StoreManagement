@@ -33,7 +33,7 @@ export const settings = pgTable(
     allowNegativeStock: boolean('allow_negative_stock').notNull().default(false),
     receiptHeader: text('receipt_header'),
     receiptFooter: text('receipt_footer'),
-    sizePresets: jsonb('size_presets').$type<string[]>().notNull().default([]),
+    sizePresets: jsonb('size_presets').$type<{ name: string; sizes: string[] }[]>().notNull().default([]),
     colorPresets: jsonb('color_presets').$type<{ name: string; hex: string }[]>().notNull().default([]),
     sessionIdleHours: integer('session_idle_hours').notNull().default(12),
     sessionAbsoluteDays: integer('session_absolute_days').notNull().default(30),

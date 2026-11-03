@@ -6,10 +6,12 @@ import type { AuthUser, ReqCtx } from '@/lib/auth';
 import { AppError } from '@/lib/errors';
 import type { ReturnInput } from '@/schemas/sales';
 import { toReturn, type SaleOut } from '@/serializers/sales';
+import { notifyManagers } from './notifications';
 import { actorOf } from './products';
 import { cumulativeRefund } from './sale-math';
 import { lockSale } from './sale-void';
 import { loadSale } from './sales';
+import { getSettings } from './settings';
 import { applyMovement, lockVariants } from './stock';
 
 /**
@@ -116,6 +118,18 @@ export async function createReturn(db: Db, user: AuthUser, saleId: string, input
       .where(eq(sales.id, saleId));
 
     await audit(tx, actorOf(user, ctx), 'return.create', 'return', ret.id, null, { ...toReturn(ret, retItems), skippedRestock });
+
+    const cfg = await getSettings(tx);
+    if (refundAmount > cfg.largeRefundAlert) {
+      await notifyManagers(tx, {
+        kind: 'LARGE_REFUND',
+        title: 'Large refund',
+        body: `${cfg.currency} ${(refundAmount / 100).toFixed(2)} refunded on ${sale.number} by ${user.name}.`,
+        href: `/sales?open=${saleId}`,
+        actionLabel: 'Review sale',
+        payload: { saleId, returnId: ret.id, refundAmount },
+      });
+    }
   });
 
   const out = await loadSale(db, saleId);

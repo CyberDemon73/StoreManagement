@@ -22,7 +22,7 @@ export interface PublicSettings {
   receiptFooter: string | null;
 }
 
-// The column is typed string[] from Sprint 0, but the stored shape is { name, sizes }[] (default []).
+// Stored shape is { name, sizes }[] (default []).
 const sizePresetsOf = (s: SettingsRow) => s.sizePresets as unknown as SizePreset[];
 
 export function toPublicSettings(s: SettingsRow): PublicSettings {

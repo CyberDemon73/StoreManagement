@@ -6,6 +6,7 @@ import type { AuthUser, ReqCtx } from '@/lib/auth';
 import { AppError } from '@/lib/errors';
 import type { CountApplyInput, CountItemsInput, CountStartInput } from '@/schemas/counts';
 import { toStockCount, toStockCountItem, type StockCountOut } from '@/serializers/counts';
+import { notifyLowStock, notifyManagers } from './notifications';
 import { actorOf } from './products';
 import { applyMovement, lockVariants, nextNumber } from './stock';
 
@@ -175,6 +176,7 @@ export async function applyCount(db: Db, user: AuthUser, id: string, input: Coun
     const eligible = new Set(eligibleRows.map((r) => r.id));
     const skipped: string[] = [];
     let movements = 0;
+    const moved: string[] = [];
     for (const t of targets) {
       if (!eligible.has(t.variantId)) {
         skipped.push(t.variantId);
@@ -194,7 +196,16 @@ export async function applyCount(db: Db, user: AuthUser, id: string, input: Coun
       });
       live.set(t.variantId, { quantity: result.quantity, costPrice: result.costPrice });
       movements += 1;
+      moved.push(t.variantId);
     }
+    await notifyLowStock(tx, moved);
+    await notifyManagers(tx, {
+      kind: 'COUNT_APPLIED',
+      title: 'Stock count applied',
+      body: `${count.number} applied by ${user.name} · ${movements} adjustments.`,
+      href: '/stock/count',
+      payload: { countId: id, movements },
+    });
     const now = new Date();
     await tx.update(stockCounts).set({ status: 'APPLIED', appliedAt: now, appliedBy: user.id }).where(eq(stockCounts.id, id));
     await audit(tx, actorOf(user, ctx), 'count.apply', 'stock_count', id, { status: 'OPEN' }, { status: 'APPLIED', uncountedAsZero: !!input.uncountedAsZero, movements, skipped });

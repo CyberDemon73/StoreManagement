@@ -4,6 +4,7 @@ import type { AuthUser, ReqCtx } from '@/lib/auth';
 import type { AdjustmentsInput } from '@/schemas/movements';
 import type { StockMovementOut } from '@/serializers/movements';
 import { loadMovements } from './movements';
+import { notifyLowStock } from './notifications';
 import { actorOf } from './products';
 import { applyMovement, lockVariants } from './stock';
 
@@ -36,6 +37,10 @@ export async function createAdjustments(db: Db, user: AuthUser, input: Adjustmen
       created.push(result.movementId);
       booked.push({ variantId: item.variantId, qtyDelta: delta, reason: item.reason });
     }
+    await notifyLowStock(
+      tx,
+      booked.map((b) => b.variantId),
+    );
     if (created.length > 0) await audit(tx, actorOf(user, ctx), 'stock.adjust', 'variant', null, null, { items: booked });
     return created;
   });
