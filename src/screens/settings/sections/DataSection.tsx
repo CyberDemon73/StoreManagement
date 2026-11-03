@@ -13,10 +13,12 @@ import { csvDataUrl, downloadUrl } from '@/screens/analytics/tabs/shared';
 
 type Preview = Awaited<ReturnType<typeof api.settings.importPreview>>;
 const COLS = ['name', 'brand', 'category', 'size', 'color', 'colorHex', 'price', 'cost', 'qty', 'barcode'] as const;
+// Category is the full path from the server, e.g. "Men/Shirts"; a unique leaf name still works
+// on import, but the full path is the safe form that round-trips with an export.
 const TEMPLATE = [
   [...COLS],
-  ['Linen Shirt Relaxed', 'Northline', 'Shirts', 'M', 'Black', '#1F2421', '890.00', '420.00', '12', ''],
-  ['Chino Slim', 'Northline', 'Trousers', '32', 'Sand', '#C8B89A', '1090.00', '510.00', '4', ''],
+  ['Linen Shirt Relaxed', 'Northline', 'Men/Shirts', 'M', 'Black', '#1F2421', '890.00', '420.00', '12', ''],
+  ['Chino Slim', 'Northline', 'Men/Trousers', '32', 'Sand', '#C8B89A', '1090.00', '510.00', '4', ''],
 ];
 
 export function DataSection() {

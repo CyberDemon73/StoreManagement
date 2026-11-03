@@ -337,7 +337,11 @@ export const api = {
      * `fields.file`. Row 2 is the first data row in the error coordinates.
      */
     importPreview: (file: File): Promise<ImportPreview> => {
-      if (!isLive('/products')) return mock(() => ({ rows: 40, ok: 38, errors: [{ row: 7, message: 'Unknown brand', data: { name: 'Chino Slim', brand: 'Northlne', size: '32', color: 'Sand', price: '1090.00', qty: '4' } }, { row: 23, message: 'Price not a number', data: { name: 'Canvas Low Sneaker', brand: 'Casa Lino', size: '42', color: 'White', price: 'abc', qty: '6' } }] }));
+      if (!isLive('/products')) return mock(() => ({ rows: 40, ok: 37, errors: [
+        { row: 7, message: 'Unknown brand', data: { name: 'Chino Slim', brand: 'Northlne', category: 'Men/Trousers', size: '32', color: 'Sand', colorHex: '#C8B89A', price: '1090.00', cost: '510.00', qty: '4', barcode: '' } },
+        { row: 23, message: 'Price not a number (use 1090.50 — no thousands separators, at most 2 decimals)', data: { name: 'Canvas Low Sneaker', brand: 'Casa Lino', category: 'Shoes', size: '42', color: 'White', colorHex: '#FFFFFF', price: 'abc', cost: '640.00', qty: '6', barcode: '' } },
+        { row: 31, message: 'Ambiguous category — use the full path, e.g. Men/Shirts', data: { name: 'Oxford Shirt', brand: 'Northline', category: 'Shirts', size: 'L', color: 'White', colorHex: '#FFFFFF', price: '690.00', cost: '320.00', qty: '2', barcode: '' } },
+      ] }));
       const form = new FormData(); form.append('file', file);
       return requestMultipart<ImportPreview>('/products/import?dryRun=1', form);
     },
