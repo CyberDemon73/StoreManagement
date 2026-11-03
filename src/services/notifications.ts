@@ -52,6 +52,19 @@ export async function notifyManagers(tx: Db, n: NotifyInput): Promise<void> {
   );
 }
 
+/** One row per ACTIVE ADMIN except `excludeId` (the actor needs no alert about their own action). */
+export async function notifyAdmins(tx: Db, n: NotifyInput, excludeId?: string): Promise<void> {
+  const recipients = await tx
+    .select({ id: users.id })
+    .from(users)
+    .where(and(eq(users.status, 'ACTIVE'), eq(users.role, 'ADMIN')));
+  await insertFor(
+    tx,
+    recipients.map((r) => r.id).filter((id) => id !== excludeId),
+    n,
+  );
+}
+
 export async function notifyUser(tx: Db, userId: string, n: NotifyInput): Promise<void> {
   await insertFor(tx, [userId], n);
 }
@@ -91,7 +104,38 @@ export async function notifyLowStock(tx: Db, variantIds: string[]): Promise<void
   }
 }
 
-const UA_MAX = 120;
+// Order matters: Edge/Opera/Samsung UAs also say "Chrome", Chrome UAs also say "Safari".
+const BROWSERS: [RegExp, string][] = [
+  [/\bEdg(?:e|A|iOS)?\//, 'Edge'],
+  [/\b(?:OPR|Opera)\//, 'Opera'],
+  [/\bSamsungBrowser\//, 'Samsung Internet'],
+  [/\b(?:Firefox|FxiOS)\//, 'Firefox'],
+  [/\b(?:Chrome|CriOS|Chromium)\//, 'Chrome'],
+  [/\bVersion\/[\d.]+.*\bSafari\//, 'Safari'],
+];
+const SYSTEMS: [RegExp, string][] = [
+  [/\biPhone\b/, 'iPhone'],
+  [/\biPad\b/, 'iPad'],
+  [/\bAndroid\b/, 'Android'],
+  [/\bWindows\b/, 'Windows'],
+  [/\bCrOS\b/, 'ChromeOS'],
+  [/\bMac OS X\b|\bMacintosh\b/, 'macOS'],
+  [/\bLinux\b/, 'Linux'],
+];
+
+/**
+ * Short fixed label such as "Chrome on Windows". The raw user agent is attacker-controlled,
+ * so only strings from the tables above ever reach a notification.
+ */
+export function deviceLabel(userAgent: string | null): string {
+  const ua = userAgent ?? '';
+  const browser = BROWSERS.find(([re]) => re.test(ua))?.[1];
+  const os = SYSTEMS.find(([re]) => re.test(ua))?.[1];
+  if (browser && os) return `${browser} on ${os}`;
+  if (browser) return browser;
+  if (os) return `a browser on ${os}`;
+  return 'a new browser';
+}
 
 /**
  * Record the device for this login. The first device a user ever signs in from is recorded
@@ -109,7 +153,7 @@ export async function recordLoginDevice(db: Db, userId: string, userAgent: strin
     await notifyUser(tx, userId, {
       kind: 'NEW_DEVICE_LOGIN',
       title: 'New sign-in',
-      body: `Your account signed in from a new device: ${ua.slice(0, UA_MAX)}`,
+      body: `Your account signed in from a new device (${deviceLabel(userAgent)}). If this was not you, change your password.`,
       href: '/profile',
       payload: { deviceHash },
     });

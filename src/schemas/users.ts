@@ -20,7 +20,8 @@ export const patchUserBody = z
     name: nameSchema.optional(),
     role: roleSchema.optional(),
   })
-  .strict();
+  .strict()
+  .refine((p) => p.name !== undefined || p.role !== undefined, { message: 'Nothing to update' });
 export type PatchUserInput = z.infer<typeof patchUserBody>;
 
 export const resetPasswordBody = z.object({ mode: z.enum(['EMAIL', 'TEMP']) }).strict();

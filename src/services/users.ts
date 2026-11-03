@@ -13,6 +13,7 @@ import { hashPassword } from '@/lib/password';
 import { enforce, publicIpLimiter } from '@/lib/ratelimit';
 import type { AcceptInviteInput, CreateUserInput, PatchUserInput, ResetPasswordInput } from '@/schemas/users';
 import { toPublicUser, type PublicUser } from '@/serializers/user';
+import { notifyAdmins, recordLoginDevice } from './notifications';
 import { actorOf } from './products';
 
 const INVITE_TTL_MS = 48 * 3_600_000;
@@ -80,6 +81,52 @@ async function assertAnotherActiveAdmin(tx: Db, excludeId: string): Promise<void
   if (!other) throw new AppError('CONFLICT', 'The last active admin cannot be disabled or demoted');
 }
 
+/**
+ * Kill every outstanding RESET link for the user. Called whenever the account's state changes
+ * underneath a link (disable, admin reset, role change, own password change).
+ */
+export async function invalidateResetTokens(tx: Db, userId: string): Promise<void> {
+  await tx
+    .update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(and(eq(passwordResetTokens.userId, userId), eq(passwordResetTokens.purpose, 'RESET'), isNull(passwordResetTokens.usedAt)));
+}
+
+/** Issue a fresh INVITE token (older ones die) and return the raw value for the email. */
+async function issueInviteToken(tx: Db, userId: string): Promise<string> {
+  await tx
+    .update(passwordResetTokens)
+    .set({ usedAt: new Date() })
+    .where(and(eq(passwordResetTokens.userId, userId), eq(passwordResetTokens.purpose, 'INVITE'), isNull(passwordResetTokens.usedAt)));
+  const raw = generateToken();
+  await tx.insert(passwordResetTokens).values({
+    userId,
+    tokenHash: hashToken(raw),
+    purpose: 'INVITE',
+    expiresAt: new Date(Date.now() + INVITE_TTL_MS),
+  });
+  return raw;
+}
+
+function inviteText(name: string, actorName: string, token: string): string {
+  return `Hello ${name},\n\n${actorName} invited you to Avenue Stock. Use this link within 48 hours to set your password:\n${appUrl(`/set-password?token=${token}`)}\n`;
+}
+
+/**
+ * Accepting an invitation stamps lastLoginAt, so an account invited but never signed in has an
+ * INVITE token row and a null lastLoginAt. ("Has a used INVITE token" cannot tell acceptance
+ * apart: a re-sent invitation marks the superseded token used as well.)
+ */
+async function neverAcceptedInvite(tx: Db, row: UserRow): Promise<boolean> {
+  if (row.lastLoginAt) return false;
+  const [invite] = await tx
+    .select({ id: passwordResetTokens.id })
+    .from(passwordResetTokens)
+    .where(and(eq(passwordResetTokens.userId, row.id), eq(passwordResetTokens.purpose, 'INVITE')))
+    .limit(1);
+  return Boolean(invite);
+}
+
 export async function listUsers(db: Db): Promise<UserWithSessions[]> {
   const rows = await db
     .select({ user: users, sessions: sql<number>`count(${sessions.id})::int` })
@@ -142,7 +189,7 @@ export async function createUser(
     await sendSafely(
       user.email,
       'You have been invited to Avenue Stock',
-      `Hello ${user.name},\n\n${actor.name} invited you to Avenue Stock. Use this link within 48 hours to set your password:\n${appUrl(`/set-password?token=${inviteToken}`)}\n`,
+      inviteText(user.name, actor.name, inviteToken),
       user.id,
     );
   }
@@ -154,21 +201,27 @@ export async function updateUser(db: Db, actor: AuthUser, id: string, patch: Pat
     await lockAdminSet(tx);
     const before = await loadForUpdate(tx, id);
     const roleChanges = patch.role !== undefined && patch.role !== before.role;
+    const nameChanges = patch.name !== undefined && patch.name !== before.name;
     // 403s before 409s: a manager trying to self-promote is told "not allowed", not "not on yourself".
     requireAdminFor(actor, before.role === 'ADMIN' || patch.role === 'ADMIN');
     if (roleChanges) {
       if (before.id === actor.id) throw new AppError('CONFLICT', 'You cannot change your own role');
       if (before.role === 'ADMIN' && before.status === 'ACTIVE') await assertAnotherActiveAdmin(tx, before.id);
     }
+    // Nothing differs: no write, no audit row, no session revocation.
+    if (!roleChanges && !nameChanges) return toPublicUser(before);
 
     const [after] = await tx
       .update(users)
-      .set({ ...(patch.name !== undefined && { name: patch.name }), ...(roleChanges && { role: patch.role }), updatedAt: new Date() })
+      .set({ ...(nameChanges && { name: patch.name }), ...(roleChanges && { role: patch.role }), updatedAt: new Date() })
       .where(eq(users.id, id))
       .returning();
     if (!after) throw new AppError('NOT_FOUND', 'User not found');
     // Sessions carry no role, but a role change must not leave an old-privilege browser signed in.
-    if (roleChanges) await revokeAllSessions(tx, id);
+    if (roleChanges) {
+      await revokeAllSessions(tx, id);
+      await invalidateResetTokens(tx, id);
+    }
     await audit(tx, actorOf(actor, ctx), 'user.update', 'user', id, toPublicUser(before), toPublicUser(after));
     return toPublicUser(after);
   });
@@ -192,9 +245,14 @@ export async function setUserStatus(
       throw new AppError('CONFLICT', 'The invitation has not been accepted yet');
     }
 
-    const [after] = await tx.update(users).set({ status, updatedAt: new Date() }).where(eq(users.id, id)).returning();
+    // A disabled invitee who never accepted goes back to waiting on the invitation, not to ACTIVE.
+    const next = status === 'ACTIVE' && before.status === 'DISABLED' && (await neverAcceptedInvite(tx, before)) ? 'INVITED' : status;
+    const [after] = await tx.update(users).set({ status: next, updatedAt: new Date() }).where(eq(users.id, id)).returning();
     if (!after) throw new AppError('NOT_FOUND', 'User not found');
-    if (status === 'DISABLED') await revokeAllSessions(tx, id);
+    if (status === 'DISABLED') {
+      await revokeAllSessions(tx, id);
+      await invalidateResetTokens(tx, id);
+    }
     await audit(
       tx,
       actorOf(actor, ctx),
@@ -219,11 +277,19 @@ export async function resetUserPassword(
   const passwordHash = temporaryPassword ? await hashPassword(temporaryPassword) : undefined;
   const resetToken = input.mode === 'EMAIL' ? generateToken() : undefined;
 
-  const target = await db.transaction(async (tx) => {
+  const result = await db.transaction(async (tx) => {
     const row = await loadForUpdate(tx, id);
     requireAdminFor(actor, row.role === 'ADMIN');
-    if (row.status === 'INVITED') throw new AppError('CONFLICT', 'The invitation has not been accepted yet');
+    if (row.status === 'INVITED') {
+      // EMAIL on a stuck invitation re-sends it; a temp password would bypass the invitation.
+      if (input.mode !== 'EMAIL') throw new AppError('CONFLICT', 'The invitation has not been accepted yet');
+      const inviteToken = await issueInviteToken(tx, id);
+      await audit(tx, actorOf(actor, ctx), 'user.resend_invite', 'user', id, null, { targetRole: row.role });
+      return { target: row, inviteToken };
+    }
 
+    // Older links must not outlive the reset an admin just made.
+    await invalidateResetTokens(tx, id);
     if (passwordHash) {
       await tx.update(users).set({ passwordHash, mustChangePassword: true, updatedAt: new Date() }).where(eq(users.id, id));
     }
@@ -236,15 +302,40 @@ export async function resetUserPassword(
       });
     }
     await revokeAllSessions(tx, id);
-    await audit(tx, actorOf(actor, ctx), 'user.reset_password', 'user', id, null, { mode: input.mode });
-    return row;
+    // A reset hands the account to whoever holds the new secret, so other admins must see it.
+    await notifyAdmins(
+      tx,
+      {
+        kind: 'ACCOUNT_RESET',
+        title: `Password reset by ${actor.name}`,
+        body: `${row.name} (${row.email}) had their password reset (${input.mode === 'TEMP' ? 'temporary password' : 'email link'}).`,
+        href: '/users',
+        payload: { userId: id, actorId: actor.id, mode: input.mode },
+      },
+      actor.id,
+    );
+    await audit(tx, actorOf(actor, ctx), 'user.reset_password', 'user', id, null, { mode: input.mode, targetRole: row.role });
+    return { target: row, inviteToken: undefined };
   });
 
+  const { target, inviteToken } = result;
+  if (inviteToken) {
+    await sendSafely(target.email, 'You have been invited to Avenue Stock', inviteText(target.name, actor.name, inviteToken), target.id);
+    return {};
+  }
   if (resetToken) {
     await sendSafely(
       target.email,
       'Reset your Avenue Stock password',
-      `Hello ${target.name},\n\nAn administrator started a password reset for your account. Use this link within 30 minutes to choose a new password:\n${appUrl(`/reset?token=${resetToken}`)}\n`,
+      `Hello ${target.name},\n\nYour password was reset by ${actor.name}. Use this link within 30 minutes to choose a new password:\n${appUrl(`/reset?token=${resetToken}`)}\n\nIf you did not expect this, contact your store administrator.\n`,
+      target.id,
+    );
+  } else {
+    // Never include the temporary password: it is handed over in person.
+    await sendSafely(
+      target.email,
+      'Your Avenue Stock password was reset',
+      `Hello ${target.name},\n\nYour password was reset by ${actor.name}. You have been signed out everywhere; ${actor.name} will give you a temporary password, and you will choose a new one when you next sign in.\n\nIf you did not expect this, contact your store administrator.\n`,
       target.id,
     );
   }
@@ -302,6 +393,8 @@ export async function acceptInvite(db: Db, input: AcceptInviteInput, ctx: ReqCtx
     return accepted;
   });
 
+  // The accepting device is the user's first known device, so their first login there stays silent.
+  await recordLoginDevice(db, user.id, ctx.userAgent);
   const session = await createSession(db, { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent, remember: false });
   return { user, session };
 }

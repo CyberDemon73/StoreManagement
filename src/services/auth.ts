@@ -164,10 +164,20 @@ export async function reset(db: Db, input: ResetInput, ctx: ReqCtx): Promise<voi
   await enforce(publicIpLimiter, ctx.ip ?? 'unknown');
   const tokenHash = hashToken(input.token);
   const now = new Date();
+  // A link only works while the account is ACTIVE: disabling an account must also kill its reset links.
   const [row] = await db
-    .select()
+    .select({ id: passwordResetTokens.id, userId: passwordResetTokens.userId })
     .from(passwordResetTokens)
-    .where(and(eq(passwordResetTokens.tokenHash, tokenHash), eq(passwordResetTokens.purpose, 'RESET'), isNull(passwordResetTokens.usedAt), gt(passwordResetTokens.expiresAt, now)))
+    .innerJoin(users, eq(users.id, passwordResetTokens.userId))
+    .where(
+      and(
+        eq(passwordResetTokens.tokenHash, tokenHash),
+        eq(passwordResetTokens.purpose, 'RESET'),
+        isNull(passwordResetTokens.usedAt),
+        gt(passwordResetTokens.expiresAt, now),
+        eq(users.status, 'ACTIVE'),
+      ),
+    )
     .limit(1);
   if (!row) throw new AppError('VALIDATION', 'Invalid or expired token');
 
@@ -184,7 +194,13 @@ export async function reset(db: Db, input: ResetInput, ctx: ReqCtx): Promise<voi
       .update(passwordResetTokens)
       .set({ usedAt: now })
       .where(and(eq(passwordResetTokens.userId, row.userId), eq(passwordResetTokens.purpose, 'RESET'), isNull(passwordResetTokens.usedAt)));
-    await tx.update(users).set({ passwordHash, mustChangePassword: false, updatedAt: now }).where(eq(users.id, row.userId));
+    // Re-checked under the write: a disable racing this reset must win.
+    const [updated] = await tx
+      .update(users)
+      .set({ passwordHash, mustChangePassword: false, updatedAt: now })
+      .where(and(eq(users.id, row.userId), eq(users.status, 'ACTIVE')))
+      .returning({ id: users.id });
+    if (!updated) throw new AppError('VALIDATION', 'Invalid or expired token');
     await revokeAllSessions(tx, row.userId);
     await audit(tx, { userId: row.userId, ip: ctx.ip, userAgent: ctx.userAgent }, 'user.password_reset', 'user', row.userId, null, null);
   });

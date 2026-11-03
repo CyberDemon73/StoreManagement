@@ -8,6 +8,7 @@ import { getDb } from '@/db/client';
 import { auditLog, users } from '@/db/schema';
 import { SESSION_COOKIE } from '@/lib/auth';
 import { verifyPassword } from '@/lib/password';
+import { resetMemoryLimiters } from '@/lib/ratelimit';
 import { call, cookiePair, readSetCookie } from '../helpers/http';
 import { createUser, DEFAULT_PASSWORD, sessionCookieFor } from '../helpers/users';
 
@@ -102,5 +103,26 @@ describe('POST /me/password', () => {
     const res = await changePassword(await sessionCookieFor(db, u.id), { current: DEFAULT_PASSWORD, next: NEXT, extra: 1 });
     expect(res.status).toBe(400);
     expect((await call(passwordPOST, { method: 'POST', path: '/api/v1/me/password', body: { current: 'a', next: NEXT } })).status).toBe(401);
+  });
+});
+
+describe('POST /me/password throttle', () => {
+  it('5 attempts per user per 15 min: the 6th is 429 even with the right current password', async () => {
+    resetMemoryLimiters();
+    const db = getDb();
+    const u = await createUser(db, { role: 'SELLER' });
+    const cookie = await sessionCookieFor(db, u.id);
+    for (let i = 0; i < 5; i++) {
+      expect((await changePassword(cookie, { current: `Wrong-password-${i}00`, next: NEXT })).status).toBe(400);
+    }
+    const sixth = await changePassword(cookie, { current: DEFAULT_PASSWORD, next: NEXT });
+    expect(sixth.status).toBe(429);
+    expect((await sixth.json()).error.code).toBe('RATE_LIMITED');
+    const [row] = await db.select().from(users).where(eq(users.id, u.id));
+    expect(await verifyPassword(row!.passwordHash, DEFAULT_PASSWORD)).toBe(true);
+
+    // Keyed by user: another account is unaffected.
+    const other = await createUser(db, { role: 'SELLER' });
+    expect((await changePassword(await sessionCookieFor(db, other.id), { current: DEFAULT_PASSWORD, next: NEXT })).status).toBe(204);
   });
 });

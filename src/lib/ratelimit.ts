@@ -82,3 +82,5 @@ export const forgotEmailLimiter = createLimiter('forgot-email', 3, 3_600_000);
 export const apiUserLimiter = createLimiter('api-user', 120, 60_000);
 /** Public auth endpoints (setup, forgot, reset): coarse per-IP cap against token brute force and email bombing. */
 export const publicIpLimiter = createLimiter('public-ip', 20, 3_600_000);
+/** POST /me/password, keyed by user id: a stolen session cookie must not become a password oracle. */
+export const passwordChangeLimiter = createLimiter('pw-change', 5, 15 * 60_000);

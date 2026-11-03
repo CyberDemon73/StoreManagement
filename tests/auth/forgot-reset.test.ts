@@ -4,8 +4,12 @@ import { POST as forgot } from '@/app/api/v1/auth/forgot/route';
 import { POST as login } from '@/app/api/v1/auth/login/route';
 import { GET as me } from '@/app/api/v1/auth/me/route';
 import { POST as reset } from '@/app/api/v1/auth/reset/route';
+import { POST as mePassword } from '@/app/api/v1/me/password/route';
+import { POST as disableUser } from '@/app/api/v1/users/[id]/disable/route';
+import { POST as adminReset } from '@/app/api/v1/users/[id]/reset-password/route';
+import { PATCH as patchUser } from '@/app/api/v1/users/[id]/route';
 import { getDb } from '@/db/client';
-import { passwordResetTokens } from '@/db/schema';
+import { passwordResetTokens, users } from '@/db/schema';
 import { setEmailTransportForTests, type OutgoingEmail } from '@/lib/email';
 import { resetMemoryLimiters } from '@/lib/ratelimit';
 import { call } from '../helpers/http';
@@ -144,5 +148,81 @@ describe('hardening', () => {
     expect(blocked.status).toBe(429);
     const reset21 = await call(reset, { method: 'POST', path: '/api/v1/auth/reset', body: { token: 'x'.repeat(43), password: NEW_PASSWORD }, ip: '10.9.9.9' });
     expect(reset21.status).toBe(429);
+  });
+});
+
+describe('reset links die with the account state', () => {
+  async function requestToken(email: string): Promise<string> {
+    await call(forgot, { method: 'POST', path: '/api/v1/auth/forgot', body: { email } });
+    return tokenFrom(sent.at(-1));
+  }
+  function resetWith(token: string) {
+    return call(reset, { method: 'POST', path: '/api/v1/auth/reset', body: { token, password: NEW_PASSWORD } });
+  }
+  async function managerCookie() {
+    const db = getDb();
+    const m = await createUser(db, { role: 'MANAGER' });
+    return sessionCookieFor(db, m.id);
+  }
+
+  it('forgot → disable → reset with that token → 400', async () => {
+    const u = await createUser(getDb(), { role: 'SELLER' });
+    const token = await requestToken(u.email);
+    const cookie = await managerCookie();
+    expect((await call(disableUser, { method: 'POST', path: `/api/v1/users/${u.id}/disable`, params: { id: u.id }, cookie })).status).toBe(200);
+    const res = await resetWith(token);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toBe('Invalid or expired token');
+  });
+
+  it('a live token for a non-ACTIVE account is rejected even if it was never invalidated', async () => {
+    const db = getDb();
+    const u = await createUser(db, { role: 'SELLER' });
+    const token = await requestToken(u.email);
+    await db.update(users).set({ status: 'DISABLED' }).where(eq(users.id, u.id));
+    const res = await resetWith(token);
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.message).toBe('Invalid or expired token');
+    const [row] = await db.select().from(users).where(eq(users.id, u.id));
+    expect(row?.status).toBe('DISABLED');
+  });
+
+  it('forgot → admin TEMP reset → old token 400', async () => {
+    const u = await createUser(getDb(), { role: 'SELLER' });
+    const token = await requestToken(u.email);
+    const cookie = await managerCookie();
+    const r = await call(adminReset, { method: 'POST', path: `/api/v1/users/${u.id}/reset-password`, params: { id: u.id }, cookie, body: { mode: 'TEMP' } });
+    expect(r.status).toBe(200);
+    expect((await resetWith(token)).status).toBe(400);
+  });
+
+  it('forgot → admin EMAIL reset → old token 400, new token works', async () => {
+    const u = await createUser(getDb(), { role: 'SELLER' });
+    const oldToken = await requestToken(u.email);
+    const cookie = await managerCookie();
+    const r = await call(adminReset, { method: 'POST', path: `/api/v1/users/${u.id}/reset-password`, params: { id: u.id }, cookie, body: { mode: 'EMAIL' } });
+    expect(r.status).toBe(200);
+    const newToken = tokenFrom(sent.at(-1));
+    expect((await resetWith(oldToken)).status).toBe(400);
+    expect((await resetWith(newToken)).status).toBe(204);
+  });
+
+  it('forgot → role change → old token 400', async () => {
+    const u = await createUser(getDb(), { role: 'SELLER' });
+    const token = await requestToken(u.email);
+    const cookie = await managerCookie();
+    const r = await call(patchUser, { method: 'PATCH', path: `/api/v1/users/${u.id}`, params: { id: u.id }, cookie, body: { role: 'MANAGER' } });
+    expect(r.status).toBe(200);
+    expect((await resetWith(token)).status).toBe(400);
+  });
+
+  it('forgot → POST /me/password → old token 400', async () => {
+    const db = getDb();
+    const u = await createUser(db, { role: 'SELLER' });
+    const token = await requestToken(u.email);
+    const cookie = await sessionCookieFor(db, u.id);
+    const r = await call(mePassword, { method: 'POST', path: '/api/v1/me/password', cookie, body: { current: u.password, next: 'Yq8!vt-plume-orbit2' } });
+    expect(r.status).toBe(204);
+    expect((await resetWith(token)).status).toBe(400);
   });
 });

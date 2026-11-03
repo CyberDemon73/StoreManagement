@@ -68,7 +68,7 @@ export const auditLog = pgTable(
   ],
 );
 
-export const notificationKindEnum = pgEnum('notification_kind', ['LOW_STOCK', 'LARGE_REFUND', 'NEW_DEVICE_LOGIN', 'COUNT_APPLIED']);
+export const notificationKindEnum = pgEnum('notification_kind', ['LOW_STOCK', 'LARGE_REFUND', 'NEW_DEVICE_LOGIN', 'COUNT_APPLIED', 'ACCOUNT_RESET']);
 
 /** One row per recipient, so read state is per user. dedupeKey suppresses repeats while unread. */
 export const notifications = pgTable(

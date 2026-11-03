@@ -5,7 +5,7 @@ import { POST as login } from '@/app/api/v1/auth/login/route';
 import { GET as me } from '@/app/api/v1/auth/me/route';
 import { POST as createUserRoute } from '@/app/api/v1/users/route';
 import { getDb } from '@/db/client';
-import { passwordResetTokens, users } from '@/db/schema';
+import { knownDevices, notifications, passwordResetTokens, users } from '@/db/schema';
 import { SESSION_COOKIE } from '@/lib/auth';
 import { setEmailTransportForTests, type OutgoingEmail } from '@/lib/email';
 import { resetMemoryLimiters } from '@/lib/ratelimit';
@@ -82,6 +82,22 @@ describe('POST /auth/accept-invite', () => {
     const again = await accept({ token, password: PASSWORD });
     expect(again.status).toBe(400);
     expect((await again.json()).error.message).toBe('Invalid or expired invitation');
+  });
+
+  it('the accepting device becomes the first known device: no alert then, none on a same-device login', async () => {
+    const ua = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36';
+    const { userId, token } = await invite();
+    const res = await call(acceptInvite, { method: 'POST', path: '/api/v1/auth/accept-invite', body: { token, password: PASSWORD }, headers: { 'user-agent': ua } });
+    expect(res.status).toBe(200);
+    expect(await getDb().select().from(knownDevices).where(eq(knownDevices.userId, userId))).toHaveLength(1);
+    const loginRes = await call(login, {
+      method: 'POST',
+      path: '/api/v1/auth/login',
+      body: { email: 'invitee@example.com', password: PASSWORD },
+      headers: { 'user-agent': ua },
+    });
+    expect(loginRes.status).toBe(200);
+    expect(await getDb().select().from(notifications).where(eq(notifications.userId, userId))).toHaveLength(0);
   });
 
   it('expired token → 400', async () => {

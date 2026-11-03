@@ -7,8 +7,9 @@ import { POST as enable } from '@/app/api/v1/users/[id]/enable/route';
 import { PATCH as patchUser } from '@/app/api/v1/users/[id]/route';
 import { GET as listUsers, POST as createUserRoute } from '@/app/api/v1/users/route';
 import { GET as me } from '@/app/api/v1/auth/me/route';
+import { POST as acceptInvite } from '@/app/api/v1/auth/accept-invite/route';
 import { getDb } from '@/db/client';
-import { auditLog, passwordResetTokens, sessions, users } from '@/db/schema';
+import { auditLog, notifications, passwordResetTokens, sessions, users } from '@/db/schema';
 import { setEmailTransportForTests, type OutgoingEmail } from '@/lib/email';
 import { verifyPassword } from '@/lib/password';
 import { resetMemoryLimiters } from '@/lib/ratelimit';
@@ -387,5 +388,142 @@ describe('route manifest', () => {
       expect(find(method, path)?.access, `${method} ${path}`).toBe('users.manage');
     }
     expect(find('POST', '/auth/accept-invite')?.access).toBe('public');
+  });
+});
+
+describe('peer password resets are visible', () => {
+  it('manager TEMP-resets a seller → each active admin gets one ACCOUNT_RESET, the target is emailed, audit has targetRole', async () => {
+    const db = getDb();
+    const admin = await createUser(db, { role: 'ADMIN' });
+    const disabledAdmin = await createUser(db, { role: 'ADMIN', status: 'DISABLED' });
+    const m = await actor('MANAGER');
+    const otherManager = await createUser(db, { role: 'MANAGER' });
+    const s = await createUser(db, { role: 'SELLER', name: 'Sam Seller' });
+
+    const res = await post(resetPassword, s.id, m.cookie, { mode: 'TEMP' }, '/reset-password');
+    expect(res.status).toBe(200);
+    const { temporaryPassword } = await res.json();
+
+    // createUser names a user after its role, so the manager is called 'MANAGER'.
+    const adminRows = await db.select().from(notifications).where(eq(notifications.userId, admin.id));
+    expect(adminRows).toHaveLength(1);
+    expect(adminRows[0]).toMatchObject({ kind: 'ACCOUNT_RESET', title: 'Password reset by MANAGER', href: '/users' });
+    expect(adminRows[0]!.body).toContain('Sam Seller');
+    expect(adminRows[0]!.body).toContain(s.email);
+    for (const id of [disabledAdmin.id, m.id, otherManager.id, s.id]) {
+      expect(await db.select().from(notifications).where(eq(notifications.userId, id))).toHaveLength(0);
+    }
+
+    const toTarget = sent.filter((mail) => mail.to === s.email);
+    expect(toTarget).toHaveLength(1);
+    expect(toTarget[0]!.text).toContain('reset by MANAGER');
+    expect(toTarget[0]!.text).not.toContain(temporaryPassword);
+
+    const [entry] = await db.select().from(auditLog).where(eq(auditLog.action, 'user.reset_password'));
+    expect(entry?.after).toEqual({ mode: 'TEMP', targetRole: 'SELLER' });
+  });
+
+  it('EMAIL mode: one email naming the actor, admins notified', async () => {
+    const db = getDb();
+    const admin = await createUser(db, { role: 'ADMIN' });
+    const m = await actor('MANAGER');
+    const s = await createUser(db, { role: 'SELLER' });
+    expect((await post(resetPassword, s.id, m.cookie, { mode: 'EMAIL' }, '/reset-password')).status).toBe(200);
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.text).toContain('reset by MANAGER');
+    expect(sent[0]!.text).toContain('/reset?token=');
+    const rows = await db.select().from(notifications).where(eq(notifications.userId, admin.id));
+    expect(rows.map((r) => r.kind)).toEqual(['ACCOUNT_RESET']);
+    const [entry] = await db.select().from(auditLog).where(eq(auditLog.action, 'user.reset_password'));
+    expect(entry?.after).toEqual({ mode: 'EMAIL', targetRole: 'SELLER' });
+  });
+});
+
+describe('stuck invitations', () => {
+  async function inviteSeller(cookie: string) {
+    const res = await call(createUserRoute, {
+      method: 'POST',
+      path: '/api/v1/users',
+      cookie,
+      body: { name: 'Invitee', email: 'invitee@example.com', role: 'SELLER', mode: 'INVITE' },
+    });
+    expect(res.status).toBe(201);
+    return (await res.json()).user.id as string;
+  }
+  function inviteTokenFrom(mail: OutgoingEmail | undefined): string {
+    const found = mail?.text.match(/\/set-password\?token=([A-Za-z0-9_-]+)/);
+    if (!found?.[1]) throw new Error('no invite token in email');
+    return found[1];
+  }
+  const accept = (token: string) =>
+    call(acceptInvite, { method: 'POST', path: '/api/v1/auth/accept-invite', body: { token, password: 'Vx7!river-copper-lamp' } });
+
+  it('reset-password EMAIL on an INVITED user re-sends a fresh 48 h invitation; the old link dies', async () => {
+    const m = await actor('MANAGER');
+    const id = await inviteSeller(m.cookie);
+    const oldToken = inviteTokenFrom(sent.at(-1));
+
+    const res = await post(resetPassword, id, m.cookie, { mode: 'EMAIL' }, '/reset-password');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({});
+    expect(sent).toHaveLength(2);
+    expect(sent[1]!.to).toBe('invitee@example.com');
+    const newToken = inviteTokenFrom(sent[1]);
+    expect(newToken).not.toBe(oldToken);
+
+    const toks = await getDb().select().from(passwordResetTokens).where(eq(passwordResetTokens.userId, id));
+    expect(toks.every((t) => t.purpose === 'INVITE')).toBe(true);
+    const live = toks.filter((t) => t.usedAt === null);
+    expect(live).toHaveLength(1);
+    expect(live[0]!.expiresAt.getTime() - Date.now()).toBeGreaterThan(47 * 3_600_000);
+
+    expect((await accept(oldToken)).status).toBe(400);
+    expect((await accept(newToken)).status).toBe(200);
+  });
+
+  it('reset-password TEMP on an INVITED user stays 409', async () => {
+    const m = await actor('MANAGER');
+    const id = await inviteSeller(m.cookie);
+    expect((await post(resetPassword, id, m.cookie, { mode: 'TEMP' }, '/reset-password')).status).toBe(409);
+  });
+
+  it('enable on a disabled never-accepted invitee restores INVITED (even after a resend)', async () => {
+    const m = await actor('MANAGER');
+    const id = await inviteSeller(m.cookie);
+    expect((await post(resetPassword, id, m.cookie, { mode: 'EMAIL' }, '/reset-password')).status).toBe(200);
+    expect((await post(disable, id, m.cookie, undefined, '/disable')).status).toBe(200);
+    const on = await post(enable, id, m.cookie, undefined, '/enable');
+    expect(on.status).toBe(200);
+    expect((await on.json()).user.status).toBe('INVITED');
+    expect((await roleOf(id))?.status).toBe('INVITED');
+  });
+
+  it('enable on a disabled invitee who had accepted restores ACTIVE', async () => {
+    const m = await actor('MANAGER');
+    const id = await inviteSeller(m.cookie);
+    expect((await accept(inviteTokenFrom(sent.at(-1)))).status).toBe(200);
+    expect((await post(disable, id, m.cookie, undefined, '/disable')).status).toBe(200);
+    const on = await post(enable, id, m.cookie, undefined, '/enable');
+    expect((await on.json()).user.status).toBe('ACTIVE');
+  });
+});
+
+describe('PATCH /users/:id no-ops', () => {
+  it('empty body → 400', async () => {
+    const m = await actor('MANAGER');
+    const s = await createUser(getDb(), { role: 'SELLER' });
+    const res = await call(patchUser, { method: 'PATCH', path: `/api/v1/users/${s.id}`, params: { id: s.id }, cookie: m.cookie, body: {} });
+    expect(res.status).toBe(400);
+  });
+
+  it('unchanged values → 200 without an audit row or session revocation', async () => {
+    const m = await actor('MANAGER');
+    const s = await createUser(getDb(), { role: 'SELLER', name: 'Same' });
+    await sessionCookieFor(getDb(), s.id);
+    const res = await call(patchUser, { method: 'PATCH', path: `/api/v1/users/${s.id}`, params: { id: s.id }, cookie: m.cookie, body: { name: 'Same', role: 'SELLER' } });
+    expect(res.status).toBe(200);
+    expect((await res.json()).user).toMatchObject({ name: 'Same', role: 'SELLER' });
+    expect(await getDb().select().from(auditLog).where(eq(auditLog.action, 'user.update'))).toHaveLength(0);
+    expect(await sessionCount(s.id)).toBe(1);
   });
 });

@@ -147,14 +147,21 @@ describe('NEW_DEVICE_LOGIN producer', () => {
     expect(await db.select().from(knownDevices).where(eq(knownDevices.userId, u.id))).toHaveLength(1);
     expect(await db.select().from(notifications)).toHaveLength(0);
 
-    const longUa = `Mozilla/5.0 (DeviceB) ${'x'.repeat(300)}`;
+    // The raw UA is attacker-controlled: only a parsed label reaches the notification body.
+    const longUa = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/130.0.0.0 Safari/537.36 VISIT-evil.example ${'x'.repeat(300)}`;
     expect((await login(u.email, u.password, longUa)).status).toBe(200);
     expect(await db.select().from(knownDevices).where(eq(knownDevices.userId, u.id))).toHaveLength(2);
     const rows = await rowsFor(u.id, 'NEW_DEVICE_LOGIN');
     expect(rows).toHaveLength(1);
     expect(rows[0]!.title).toBe('New sign-in');
-    expect(rows[0]!.body).toContain('DeviceB');
-    expect(rows[0]!.body).not.toContain('x'.repeat(200));
+    expect(rows[0]!.body).toContain('Chrome on Windows');
+    expect(rows[0]!.body).not.toContain('Mozilla');
+    expect(rows[0]!.body).not.toContain('evil.example');
+
+    expect((await login(u.email, u.password, 'curl/8.0 (DeviceC)')).status).toBe(200);
+    const after = await rowsFor(u.id, 'NEW_DEVICE_LOGIN');
+    expect(after).toHaveLength(2);
+    expect(after.some((n) => n.body.includes('a new browser') && !n.body.includes('DeviceC'))).toBe(true);
     expect(await rowsFor(other.id)).toHaveLength(0);
   });
 
