@@ -46,7 +46,7 @@ variants
 
 ## stock
 ```
-stock_movements   -- immutable; never UPDATE or DELETE
+stock_movements   -- immutable; never UPDATE or DELETE. Live since Sprint 1 (applyMovement in src/services/stock.ts)
   id, variant_id fk, type enum(INITIAL,PURCHASE,SALE,RETURN,ADJUSTMENT),
   qty_delta int not null (sign matters), unit_cost int null,
   reference_kind enum(sale,purchase,return,count) null, reference_id uuid null,

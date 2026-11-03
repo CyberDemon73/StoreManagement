@@ -53,7 +53,7 @@ curl -i -X POST http://localhost:3000/api/v1/setup \
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | prod yes | Distributed rate limits. Unset → in-memory limiter (per instance; fine for local dev only) |
 | `RESEND_API_KEY` / `EMAIL_FROM` | prod yes | Password reset emails. Unset → emails are logged, not sent |
 | `CRON_SECRET` | later | Bearer token for Vercel Cron routes (Sprint 6) |
-| `BLOB_READ_WRITE_TOKEN` | Sprint 1 | Injected by the Vercel Blob store for product images |
+| `BLOB_READ_WRITE_TOKEN` | prod yes (Sprint 1) | Product image uploads via Vercel Blob (injected when the store is linked). Unset locally → uploads return 500 "Storage not configured" |
 | `LOG_LEVEL` | no | pino level, default `info` |
 
 See `docs/DEPLOYMENT.md` for the free-tier walkthrough.
