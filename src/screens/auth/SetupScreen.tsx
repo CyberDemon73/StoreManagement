@@ -24,7 +24,7 @@ export function SetupScreen() {
   const auth = useAuth();
   const [step, setStep] = useState(0);
   const [admin, setAdmin] = useState({ name: '', email: '', password: '' });
-  const [store, setStore] = useState({ storeName: '', currency: 'EGP', timezone: 'Africa/Cairo' });
+  const [store, setStore] = useState({ storeName: '', currency: 'EGP', timezone: 'Africa/Cairo', setupToken: '' });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState(false);
 
@@ -39,9 +39,11 @@ export function SetupScreen() {
 
   const finish = async () => {
     if (!store.storeName.trim()) { setErrors({ storeName: 'Store name is required.' }); return; }
+    if (!store.setupToken.trim()) { setErrors({ setupToken: 'The setup token from the server environment (SETUP_TOKEN) is required.' }); return; }
     setBusy(true); setErrors({});
     try {
-      await api.auth.setup({ name: admin.name.trim(), email: admin.email.trim(), password: admin.password, ...store, storeName: store.storeName.trim() });
+      // Timezone is set later in Settings; POST /setup takes name, email, password, storeName, currency, setupToken.
+      await api.auth.setup({ name: admin.name.trim(), email: admin.email.trim(), password: admin.password, storeName: store.storeName.trim(), currency: store.currency, setupToken: store.setupToken.trim() });
       await auth.login(admin.email.trim(), admin.password, true);
       setStep(2);
     } catch (e) {
@@ -70,6 +72,7 @@ export function SetupScreen() {
             <Field label="Currency" htmlFor="s-cur"><Select id="s-cur" size="lg" value={store.currency} onChange={(e) => setStore({ ...store, currency: e.target.value })}>{CURRENCIES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</Select></Field>
             <Field label="Timezone" htmlFor="s-tz"><Select id="s-tz" size="lg" value={store.timezone} onChange={(e) => setStore({ ...store, timezone: e.target.value })}>{TIMEZONES.map((t) => <option key={t} value={t}>{t}</option>)}</Select></Field>
           </div>
+          <Field label="Setup token" htmlFor="s-token" help="The one-time SETUP_TOKEN from the server environment; it guards first-run setup." error={errors.setupToken}><Input id="s-token" size="lg" autoComplete="off" value={store.setupToken} onChange={(e) => setStore({ ...store, setupToken: e.target.value })} invalid={!!errors.setupToken} /></Field>
           <div className="flex gap-2"><Button size="lg" onClick={() => setStep(0)} disabled={busy}>Back</Button><Button type="submit" variant="primary" size="lg" className="flex-1" loading={busy}>Continue</Button></div>
         </form>
       )}

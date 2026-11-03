@@ -17,7 +17,20 @@ import type {
   StockCount, StockMovement, Supplier, TopProduct, TrendPoint, User, Variant, VariantWithProduct,
 } from '@/types';
 
-export const USE_MOCK = true;
+/**
+ * Routes that exist on the backend are called for real; everything else still goes to the mock
+ * store. Add a prefix here as each backend sprint lands (Sprint 2: /stock, 3: /sales, 4: /analytics,
+ * 5: /users /settings /audit /notifications /me, 6: import/export). NEXT_PUBLIC_USE_MOCK=1 forces
+ * the mock everywhere for a demo without a database.
+ */
+export const USE_MOCK_ALL = process.env.NEXT_PUBLIC_USE_MOCK === '1';
+const LIVE_PREFIXES = ['/auth/', '/setup', '/products', '/variants', '/brands', '/categories', '/suppliers', '/uploads'];
+const MOCK_ONLY = [/^\/products\/(export|import)/, /^\/variants\/[^/]+\/sold/, /^\/me\//];
+export function isLive(path: string): boolean {
+  if (USE_MOCK_ALL) return false;
+  if (MOCK_ONLY.some((r) => r.test(path))) return false;
+  return LIVE_PREFIXES.some((p) => path === p || path.startsWith(p));
+}
 const BASE = '/api/v1';
 
 export class ApiError extends Error {
@@ -84,8 +97,30 @@ async function request<T>(method: string, path: string, body?: unknown, query?: 
   return data as T;
 }
 
+async function requestMultipart<T>(path: string, form: FormData): Promise<T> {
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, { method: 'POST', credentials: 'same-origin', headers: { 'X-Requested-With': 'AvenueStock' }, body: form });
+  } catch {
+    throw new ApiError('OFFLINE', "You're offline", 0);
+  }
+  const data = (await res.json().catch(() => ({}))) as T | ApiErrorBody;
+  if (!res.ok) { const e = (data as ApiErrorBody).error; throw new ApiError(e?.code ?? 'INTERNAL', e?.message ?? res.statusText, res.status, e?.fields, e?.retryAfter); }
+  return data as T;
+}
+
 const call = <T>(mockFn: () => T, method: string, path: string, body?: unknown, query?: Record<string, unknown>): Promise<T> =>
-  USE_MOCK ? mock(mockFn) : request<T>(method, path, body, query);
+  isLive(path) ? request<T>(method, path, body, query) : mock(mockFn);
+
+/** Keep only the keys a strict Zod body accepts (unknown keys are a 400). */
+const pick = <T extends object>(obj: T, keys: (keyof T)[]): Partial<T> => {
+  const out: Partial<T> = {};
+  for (const k of keys) if (obj[k] !== undefined) out[k] = obj[k];
+  return out;
+};
+const httpsOnly = (urls: string[] | undefined) => urls?.filter((u) => u.startsWith('https://'));
+/** The API returns a single role; the UI models the roles a user may act as. */
+const withRoles = (u: User & { roles?: Role[]; lastLoginAt?: string | null }): User => ({ ...u, roles: u.roles ?? [u.role], lastLoginAt: u.lastLoginAt ?? undefined });
 
 /* =========================================================================================
  * API surface
@@ -93,17 +128,29 @@ const call = <T>(mockFn: () => T, method: string, path: string, body?: unknown, 
 export const api = {
   auth: {
     /** POST /auth/login */
-    login: (email: string, password: string, remember = false) => call<{ user: User }>(() => ({ user: store.login(email, password) }), 'POST', '/auth/login', { email, password, remember }),
+    login: async (email: string, password: string, remember = false) => {
+      try {
+        const r = await call<{ user: User }>(() => ({ user: store.login(email, password) }), 'POST', '/auth/login', { email, password, remember });
+        return { user: withRoles(r.user) };
+      } catch (e) {
+        // The server answers 403 FORBIDDEN "Account disabled"; the login screen has its own copy for that.
+        if (e instanceof ApiError && e.code === 'FORBIDDEN') throw new ApiError('ACCOUNT_DISABLED', e.message, e.status);
+        throw e;
+      }
+    },
     /** POST /auth/logout */
     logout: () => call<void>(() => undefined, 'POST', '/auth/logout'),
     /** GET /auth/me */
-    me: () => call<{ user: User } | null>(() => null, 'GET', '/auth/me'),
+    me: async () => {
+      const r = await call<{ user: User; permissions: string[] } | null>(() => null, 'GET', '/auth/me');
+      return r ? { user: withRoles(r.user), permissions: r.permissions } : null;
+    },
     /** POST /auth/forgot */
     forgot: (email: string) => call<void>(() => undefined, 'POST', '/auth/forgot', { email }),
     /** POST /auth/reset */
     reset: (token: string, password: string) => call<void>(() => undefined, 'POST', '/auth/reset', { token, password }),
     /** POST /setup */
-    setup: (input: { name: string; email: string; password: string; storeName: string; currency: string; timezone: string }) => call<{ user: User }>(() => ({ user: store.listUsers()[0]! }), 'POST', '/setup', input),
+    setup: (input: { name: string; email: string; password: string; storeName: string; currency: string; setupToken: string }) => call<{ user: User }>(() => ({ user: store.listUsers()[0]! }), 'POST', '/setup', input),
     /** POST /me/password */
     changePassword: (current: string, next: string) => call<void>(() => undefined, 'POST', '/me/password', { current, next }),
   },
@@ -114,9 +161,9 @@ export const api = {
     /** GET /products/:id */
     get: (id: string) => call<ProductDetail>(() => store.getProduct(id), 'GET', `/products/${id}`),
     /** POST /products */
-    create: (input: store.CreateProductInput) => call<ProductDetail>(() => store.createProduct(input, ctx.userId), 'POST', '/products', input),
+    create: (input: store.CreateProductInput) => call<ProductDetail>(() => store.createProduct(input, ctx.userId), 'POST', '/products', { ...input, images: httpsOnly(input.images), baseSku: input.baseSku || undefined, description: input.description || undefined }),
     /** PATCH /products/:id */
-    update: (id: string, patch: Partial<Omit<Product, 'id'>>) => call<ProductDetail>(() => store.updateProduct(id, patch, ctx.userId), 'PATCH', `/products/${id}`, patch),
+    update: (id: string, patch: Partial<Omit<Product, 'id'>>) => call<ProductDetail>(() => store.updateProduct(id, patch, ctx.userId), 'PATCH', `/products/${id}`, { ...pick(patch, ['name', 'brandId', 'categoryId', 'description', 'baseSku', 'defaultCost', 'defaultPrice', 'tags']), ...(patch.images ? { images: httpsOnly(patch.images) } : {}) }),
     /** POST /products/:id/archive | /unarchive */
     archive: (id: string, archive = true) => call<ProductDetail>(() => store.archiveProduct(id, ctx.userId, archive), 'POST', `/products/${id}/${archive ? 'archive' : 'unarchive'}`),
     /** POST /products/:id/variants */
@@ -127,7 +174,7 @@ export const api = {
 
   variants: {
     /** PATCH /variants/:id (never quantity — use stock.adjust) */
-    update: (id: string, patch: Partial<Pick<Variant, 'sellPrice' | 'costPrice' | 'lowStockThreshold' | 'barcode' | 'isActive' | 'sku'>>) => call<Variant>(() => store.updateVariant(id, patch, ctx.userId), 'PATCH', `/variants/${id}`, patch),
+    update: (id: string, patch: Partial<Pick<Variant, 'sellPrice' | 'costPrice' | 'lowStockThreshold' | 'barcode' | 'isActive' | 'sku'>>) => call<Variant>(() => store.updateVariant(id, patch, ctx.userId), 'PATCH', `/variants/${id}`, pick(patch, ['sellPrice', 'costPrice', 'lowStockThreshold', 'barcode', 'isActive', 'sku'])),
     /** GET /variants/lookup?barcode|sku */
     lookup: (q: { barcode?: string; sku?: string }) => call<VariantWithProduct>(() => store.lookupVariant(q), 'GET', '/variants/lookup', undefined, q),
     /** GET /products?q (variant-level search used by POS, receive, adjust, labels) */
@@ -138,13 +185,13 @@ export const api = {
     /** GET /brands */
     brands: () => call<Brand[]>(() => store.listBrands(), 'GET', '/brands'),
     /** POST|PATCH /brands */
-    saveBrand: (input: Partial<Brand> & { name: string }) => call<Brand>(() => store.upsertBrand(input), input.id ? 'PATCH' : 'POST', input.id ? `/brands/${input.id}` : '/brands', input),
+    saveBrand: (input: Partial<Brand> & { name: string }) => call<Brand>(() => store.upsertBrand(input), input.id ? 'PATCH' : 'POST', input.id ? `/brands/${input.id}` : '/brands', { ...pick(input, ['name', 'isActive']), ...(input.logoUrl?.startsWith('https://') ? { logoUrl: input.logoUrl } : {}) }),
     /** GET /categories */
     categories: () => call<Category[]>(() => store.listCategories(), 'GET', '/categories'),
-    saveCategory: (input: Partial<Category> & { name: string }) => call<Category>(() => store.upsertCategory(input), input.id ? 'PATCH' : 'POST', input.id ? `/categories/${input.id}` : '/categories', input),
+    saveCategory: (input: Partial<Category> & { name: string; parentId?: string | null }) => call<Category>(() => store.upsertCategory({ ...input, parentId: input.parentId ?? undefined }), input.id ? 'PATCH' : 'POST', input.id ? `/categories/${input.id}` : '/categories', pick(input, ['name', 'parentId', 'isActive'])),
     /** GET /suppliers */
     suppliers: () => call<Supplier[]>(() => store.listSuppliers(), 'GET', '/suppliers'),
-    saveSupplier: (input: Partial<Supplier> & { name: string }) => call<Supplier>(() => store.upsertSupplier(input), input.id ? 'PATCH' : 'POST', input.id ? `/suppliers/${input.id}` : '/suppliers', input),
+    saveSupplier: (input: Partial<Supplier> & { name: string }) => call<Supplier>(() => store.upsertSupplier(input), input.id ? 'PATCH' : 'POST', input.id ? `/suppliers/${input.id}` : '/suppliers', pick(input, ['name', 'phone', 'notes', 'isActive'])),
   },
 
   stock: {
@@ -216,6 +263,16 @@ export const api = {
     paymentMix: (from: string, to: string) => call<PaymentMix[]>(() => store.paymentMix(from, to), 'GET', '/analytics/payment-mix', undefined, { from, to }),
     /** GET /analytics/export?report= → CSV */
     exportCsv: (report: string, from: string, to: string) => call<string>(() => `data:text/csv,${encodeURIComponent(`report,from,to\n${report},${from},${to}`)}`, 'GET', '/analytics/export', undefined, { report, from, to }),
+  },
+
+  uploads: {
+    /** POST /uploads (multipart `file`, ≤ 4 MB, jpeg/png/webp) → { url }. Mock keeps a local object URL. */
+    image: (file: File): Promise<{ url: string }> => {
+      if (!isLive('/uploads')) return mock(() => ({ url: URL.createObjectURL(file) }));
+      const form = new FormData();
+      form.append('file', file);
+      return requestMultipart<{ url: string }>('/uploads', form);
+    },
   },
 
   users: {

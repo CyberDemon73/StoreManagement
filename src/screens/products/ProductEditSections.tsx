@@ -7,6 +7,7 @@
 import { useId, useRef, useState, type ReactNode } from 'react';
 import { Check, CircleAlert, ImagePlus, Plus, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
+import { api } from '@/lib/api';
 import { formatMoney, formatPct, marginPct } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { Checkbox, Field, Input, MoneyInput, Select, Textarea } from '@/components/ui/Field';
@@ -65,9 +66,17 @@ export function BasicsSection({ form, set, errors, brands, categories, onCreateB
 export function ImagesSection({ form, set, tint }: Pick<SectionProps, 'form' | 'set'> & { tint?: string }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
-  const addFiles = (files: FileList | null) => {
+  const [uploadError, setUploadError] = useState<string>();
+  // POST /uploads (≤ 4 MB, jpeg/png/webp); the mock keeps a local object URL instead.
+  const addFiles = async (files: FileList | null) => {
     if (!files) return;
-    const urls = Array.from(files).filter((f) => f.type.startsWith('image/') && f.size <= 5 * 1024 * 1024).map((f) => URL.createObjectURL(f));
+    setUploadError(undefined);
+    const accepted = Array.from(files).filter((f) => f.type.startsWith('image/') && f.size <= 4 * 1024 * 1024);
+    if (accepted.length < files.length) setUploadError('Only JPG, PNG or WebP up to 4 MB are accepted.');
+    const urls: string[] = [];
+    for (const f of accepted) {
+      try { urls.push((await api.uploads.image(f)).url); } catch (e) { setUploadError((e as Error).message); }
+    }
     if (urls.length) set({ images: [...form.images, ...urls] });
   };
   const remove = (i: number) => set({ images: form.images.filter((_, j) => j !== i) });
@@ -85,13 +94,14 @@ export function ImagesSection({ form, set, tint }: Pick<SectionProps, 'form' | '
             </div>
           </div>
         ))}
-        <label onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); addFiles(e.dataTransfer.files); }}
+        <label onDragOver={(e) => { e.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)} onDrop={(e) => { e.preventDefault(); setOver(false); void addFiles(e.dataTransfer.files); }}
           className={cn('flex aspect-square cursor-pointer flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed text-xs font-medium text-ink-2 transition-colors hover:border-accent hover:text-accent', over ? 'border-accent bg-accent-soft text-accent' : 'border-line')}>
           <ImagePlus className="size-5" aria-hidden />Add or drop
-          <input ref={inputRef} type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { addFiles(e.target.files); e.target.value = ''; }} />
+          <input ref={inputRef} type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { void addFiles(e.target.files); e.target.value = ''; }} />
         </label>
       </div>
-      <p className="text-xs text-ink-2">First image is the cover · JPG/PNG/WebP up to 5 MB · 1:1 recommended. Images stay on this device until the product is saved.</p>
+      {uploadError && <p role="alert" className="text-xs text-danger-ink">{uploadError}</p>}
+      <p className="text-xs text-ink-2">First image is the cover · JPG/PNG/WebP up to 4 MB · 1:1 recommended. Images upload as you add them.</p>
     </>
   );
 }

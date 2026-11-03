@@ -9,7 +9,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { usePathname, useRouter } from 'next/navigation';
 import type { Permission, Role, User } from '@/types';
 import { PERMISSIONS } from '@/lib/permissions';
-import { api, setApiContext } from '@/lib/api';
+import { api, ApiError, isLive, setApiContext } from '@/lib/api';
 
 interface Session { user: User; actingRole: Role; viewAsSeller: boolean }
 
@@ -36,11 +36,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
+    let stored: Session | null = null;
     try {
       const raw = localStorage.getItem(KEY);
-      if (raw) setSession(JSON.parse(raw) as Session);
+      if (raw) stored = JSON.parse(raw) as Session;
     } catch { /* ignore */ }
-    setReady(true);
+    if (!isLive('/auth/me')) { setSession(stored); setReady(true); return; }
+    // The cookie session is the authority: confirm it with GET /auth/me and keep only the UI
+    // state (acting role, view-as-seller) from this device.
+    let cancelled = false;
+    api.auth.me()
+      .then((r) => {
+        if (cancelled) return;
+        if (!r) { setSession(null); return; }
+        const acting = stored && stored.user.id === r.user.id && r.user.roles.includes(stored.actingRole) ? stored.actingRole : r.user.role;
+        const next: Session = { user: r.user, actingRole: acting, viewAsSeller: stored?.user.id === r.user.id ? stored.viewAsSeller : false };
+        setSession(next);
+        try { localStorage.setItem(KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        // Offline: trust the stored session so the cached catalogue stays usable.
+        if (e instanceof ApiError && e.code === 'OFFLINE') setSession(stored);
+        else { setSession(null); try { localStorage.removeItem(KEY); } catch { /* ignore */ } }
+      })
+      .finally(() => { if (!cancelled) setReady(true); });
+    return () => { cancelled = true; };
   }, []);
 
   const persist = useCallback((s: Session | null) => {

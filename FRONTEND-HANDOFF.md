@@ -91,19 +91,23 @@ docs/plans/frontend.md, frontend-conventions.md
 
 Role rules live in two places only: `src/lib/nav.ts` (what is linked / which route needs which permission) and `useAuth().can()` inside screens (which columns/actions render). The server must still strip seller fields; the UI never relies on hiding alone.
 
-## Wiring the real API — what to replace
+## Wiring the real API — status and what is left
 
-1. **`src/lib/api.ts`** — set `USE_MOCK = false`. Every method already has a `request(method, path, body, query)` branch that calls `/api/v1` with `credentials: 'same-origin'` and `X-Requested-With: AvenueStock` (the CSRF header from `docs/SECURITY.md`). Check each path/param name against the route you implement; the mock branch documents the intended shape. Then delete the `mock(...)` branch and `src/mock/*`.
-   - A few client-only conveniences have no route in the spec and are implemented on top of other calls; either add the route or compose on the client: `variants.search(q)` (→ `GET /products?q` + variants), `stock.soldLast(variantId, days)` (→ `GET /sales?variantId`), `sales.preview(cart)` (pure function; keep it client-side but make sure it mirrors the server's discount cap rule), `settings.importPreview(file)` (→ multipart `POST /products/import?dryRun=1`, switch `request()` to FormData for that call), `labels(variantIds)` (→ `GET /labels?variantIds=`).
-   - Error handling: `ApiError { code, message, status, fields, retryAfter }` is already the shape of `{ error: {...} }`. `INSUFFICIENT_STOCK` must put `fields[variantId]` so the POS can mark lines. `LOCKED`/`RATE_LIMITED` must send `retryAfter` seconds for the login countdown.
-2. **`src/lib/auth-context.tsx`** — replace the localStorage session with `GET /auth/me` on mount (`api.auth.me()` is already wired) and drop the stored `user`; keep `actingRole` / `viewAsSeller` in localStorage (pure UI). `switchRole` should call the role-switch endpoint when one exists (today the UI just re-renders).
-3. **Seller stripping** — `stripForSeller()` in `api.ts` exists only to make the mock honest. Remove it once `serializers/seller.ts` does it server-side; the UI already tolerates missing `costPrice`/`profit` fields (`when:` columns, optional types).
-4. **Money** — all amounts are integer minor units end to end. `MoneyInput` converts for typing only. Never introduce floats.
-5. **Dates** — the client sends `from`/`to` as `YYYY-MM-DD`; the server applies `settings.timezone`.
-6. **CSP** — `src/app/layout.tsx` has one inline `<script>` (theme bootstrap). Either pass the middleware nonce into it or move it to `public/theme.js` and list that in `script-src`. recharts and Tailwind need no `unsafe-inline` scripts; `style-src 'unsafe-inline'` is already allowed in the spec.
-7. **Service worker** — `public/sw.js` is hand-written (no next-pwa). It caches `/_next/static`, icons, the `/offline` page, and stale-while-revalidates product/catalog GETs; mutations and `/analytics` are network-only. Registration happens only in production builds (`components/app/ServiceWorker.tsx`). Bump `SW_VERSION` on breaking changes. Queued offline sales (phase 2) would hook into `PosScreen`'s charge handler: on `OFFLINE` error, store the cart in IndexedDB and replay with an `Idempotency-Key`.
-8. **Images** — product images are URLs in `product.images`; `Thumb` renders them lazily with a fixed aspect. Upload from `ProductEditScreen` currently keeps object URLs in state only; wire it to `POST /uploads` and put the returned URL into `images[]`.
-9. **Receipts & labels** — `Receipt` and `LabelCard` are the print components (`.print-area` + `@media print` in globals.css). `GET /sales/:id/receipt?format=html` can simply render `Receipt` server-side if you want server-generated receipts.
+`src/lib/api.ts` decides per route whether to call the backend or the mock: `isLive(path)` is true for the prefixes in `LIVE_PREFIXES` (`/auth/`, `/setup`, `/products`, `/variants`, `/brands`, `/categories`, `/suppliers`, `/uploads`) and false for everything else, which still runs on the in-memory store. `NEXT_PUBLIC_USE_MOCK=1` forces the mock everywhere (demo without a database).
+
+**Live today (Sprint 0 + 1):** sign-in / sign-out / `GET /auth/me` (the auth context confirms the cookie session on load; acting role and View-as-seller stay on the device), setup wizard (needs the server's `SETUP_TOKEN`), products list/detail/create/update/archive, variant create/update/lookup/search, brands / categories / suppliers, image upload (`POST /uploads`, multipart `file`, ≤ 4 MB).
+
+**Still mock:** stock (receive, adjust, movements, low, counts), sales + parked sales, analytics, users, settings (incl. CSV import preview), audit, notifications, labels data, `POST /me/password`, CSV exports. As each sprint lands, add its prefix to `LIVE_PREFIXES` (and remove any `MOCK_ONLY` exception), then check the response against `src/types.ts`.
+
+Things the client already does for the strict API: it `pick()`s only the keys each Zod body accepts (unknown keys are a 400), sends only `https://` image URLs, maps the login `403 FORBIDDEN` for a disabled account to `ACCOUNT_DISABLED` for the login screen, and adds `roles: [role]` to users because the API returns one role. Seller cost-field stripping happens server-side on live routes; `stripForSeller()` only runs on mock responses.
+
+Other notes:
+- Errors arrive as `{ error: { code, message, fields?, retryAfter? } }` → `ApiError`. `INSUFFICIENT_STOCK` (Sprint 3) must put `fields[variantId]` so the POS can mark lines; `LOCKED`/`RATE_LIMITED` send `retryAfter` seconds for the login countdown.
+- Every mutation sends `X-Requested-With: AvenueStock` and same-origin cookies, which the CSRF middleware requires.
+- Money is integer minor units end to end; dates go as `YYYY-MM-DD` and the server applies `settings.timezone`.
+- `src/app/layout.tsx` has one inline `<script>` (theme bootstrap) carrying the middleware's CSP nonce.
+- `public/sw.js` is hand-written: caches `/_next/static`, icons, `/offline`, and stale-while-revalidates product/catalog GETs; mutations and `/analytics` are network-only. Registration happens only in production builds. Queued offline sales (phase 2) would hook into the POS charge handler on an `OFFLINE` error.
+- `Receipt` and `LabelCard` are the print components (`.print-area` + `@media print`).
 
 ## Conventions (short)
 
