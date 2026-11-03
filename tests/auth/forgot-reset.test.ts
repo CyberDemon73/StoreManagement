@@ -110,3 +110,39 @@ describe('POST /auth/reset', () => {
     expect((await weak.json()).error.fields.password).toBe('Password is too common');
   });
 });
+
+describe('hardening', () => {
+  it('forgot still returns 204 when the email provider fails', async () => {
+    const u = await createUser(getDb(), { role: 'SELLER' });
+    setEmailTransportForTests(async () => {
+      throw new Error('resend down');
+    });
+    const res = await call(forgot, { method: 'POST', path: '/api/v1/auth/forgot', body: { email: u.email } });
+    expect(res.status).toBe(204);
+  });
+
+  it('a successful reset invalidates the user’s other outstanding reset tokens', async () => {
+    const db = getDb();
+    const u = await createUser(db, { role: 'SELLER' });
+    await call(forgot, { method: 'POST', path: '/api/v1/auth/forgot', body: { email: u.email } });
+    const tokenA = tokenFrom(sent.at(-1));
+    await call(forgot, { method: 'POST', path: '/api/v1/auth/forgot', body: { email: u.email } });
+    const tokenB = tokenFrom(sent.at(-1));
+    expect((await call(reset, { method: 'POST', path: '/api/v1/auth/reset', body: { token: tokenB, password: NEW_PASSWORD } })).status).toBe(204);
+    const withA = await call(reset, { method: 'POST', path: '/api/v1/auth/reset', body: { token: tokenA, password: 'Another-good-pass-42' } });
+    expect(withA.status).toBe(400);
+    const open = await db.select().from(passwordResetTokens).where(eq(passwordResetTokens.userId, u.id));
+    expect(open.every((t) => t.usedAt !== null)).toBe(true);
+  });
+
+  it('limits public auth routes per IP (20/h) — forgot', async () => {
+    for (let i = 0; i < 20; i++) {
+      const r = await call(forgot, { method: 'POST', path: '/api/v1/auth/forgot', body: { email: `p${i}@example.com` }, ip: '10.9.9.9' });
+      expect(r.status).toBe(204);
+    }
+    const blocked = await call(forgot, { method: 'POST', path: '/api/v1/auth/forgot', body: { email: 'p99@example.com' }, ip: '10.9.9.9' });
+    expect(blocked.status).toBe(429);
+    const reset21 = await call(reset, { method: 'POST', path: '/api/v1/auth/reset', body: { token: 'x'.repeat(43), password: NEW_PASSWORD }, ip: '10.9.9.9' });
+    expect(reset21.status).toBe(429);
+  });
+});

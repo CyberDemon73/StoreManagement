@@ -59,3 +59,20 @@ describe('POST /setup', () => {
     expect((await weak.json()).error.fields.password).toBe('Password is too common');
   });
 });
+
+describe('setup hardening', () => {
+  it('answers 409 once a user exists even when the token is wrong (no token oracle)', async () => {
+    await createUser(getDb(), { role: 'SELLER' });
+    const res = await setup({ ...valid, setupToken: 'nope' });
+    expect(res.status).toBe(409);
+  });
+
+  it('limits setup attempts per IP (20/h)', async () => {
+    for (let i = 0; i < 20; i++) {
+      const r = await call(POST, { method: 'POST', path: '/api/v1/setup', body: { ...valid, setupToken: 'wrong-token-attempt' }, ip: '10.8.8.8' });
+      expect(r.status).toBe(403);
+    }
+    const blocked = await call(POST, { method: 'POST', path: '/api/v1/setup', body: valid, ip: '10.8.8.8' });
+    expect(blocked.status).toBe(429);
+  });
+});

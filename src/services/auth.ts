@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
-import { and, eq, gt, isNull } from 'drizzle-orm';
+import { and, eq, gt, isNull, sql } from 'drizzle-orm';
+import { after } from 'next/server';
 import type { Db } from '@/db/client';
 import { passwordResetTokens, users } from '@/db/schema';
 import { audit } from '@/lib/audit';
@@ -16,9 +17,11 @@ import {
 import { sendEmail } from '@/lib/email';
 import { getEnv } from '@/lib/env';
 import { AppError } from '@/lib/errors';
+import { describeError } from '@/lib/http';
+import { logger } from '@/lib/logger';
 import { getDummyHash, hashPassword, verifyPassword } from '@/lib/password';
 import { permissionsFor, type Permission } from '@/lib/permissions';
-import { enforce, forgotEmailLimiter, loginEmailLimiter, loginIpLimiter } from '@/lib/ratelimit';
+import { enforce, forgotEmailLimiter, loginEmailLimiter, loginIpLimiter, publicIpLimiter } from '@/lib/ratelimit';
 import type { ForgotInput, LoginInput, ResetInput, SetupInput } from '@/schemas/auth';
 import { toPublicSettings, type PublicSettings } from '@/serializers/settings';
 import { toPublicUser, type PublicUser } from '@/serializers/user';
@@ -34,6 +37,11 @@ function tokenMatches(given: string, expected: string | undefined): boolean {
 
 /** First-run bootstrap: creates the admin and the settings row. Only valid while `users` is empty. */
 export async function setup(db: Db, input: SetupInput, ctx: ReqCtx): Promise<{ user: PublicUser; session: NewSession }> {
+  await enforce(publicIpLimiter, ctx.ip ?? 'unknown');
+
+  // Once a user exists the answer is always 409, so the token cannot be probed after setup.
+  const [anyUser] = await db.select({ id: users.id }).from(users).limit(1);
+  if (anyUser) throw new AppError('CONFLICT', 'Setup already completed');
   if (!tokenMatches(input.setupToken, getEnv().SETUP_TOKEN)) {
     throw new AppError('FORBIDDEN', 'Invalid setup token');
   }
@@ -41,6 +49,8 @@ export async function setup(db: Db, input: SetupInput, ctx: ReqCtx): Promise<{ u
   const passwordHash = await hashPassword(input.password);
 
   const created = await db.transaction(async (tx) => {
+    // Serialise concurrent setup calls: READ COMMITTED would let two of them both see an empty table.
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext('avenue:setup'))`);
     const [existing] = await tx.select({ id: users.id }).from(users).limit(1);
     if (existing) throw new AppError('CONFLICT', 'Setup already completed');
 
@@ -107,8 +117,11 @@ const RESET_TOKEN_TTL_MS = 30 * 60_000;
 
 /** Always resolves (204 to the client) so the response never reveals whether the email exists. */
 export async function forgot(db: Db, input: ForgotInput, ctx: ReqCtx): Promise<void> {
+  await enforce(publicIpLimiter, ctx.ip ?? 'unknown');
   await enforce(forgotEmailLimiter, input.email);
   const [user] = await db.select().from(users).where(eq(users.email, input.email)).limit(1);
+  // Same audit write for unknown emails keeps the DB work (and timing) symmetric.
+  await audit(db, { userId: user?.id ?? null, ip: ctx.ip, userAgent: ctx.userAgent }, 'auth.forgot', 'user', user?.id ?? null, null, null);
   if (!user || user.status !== 'ACTIVE') return;
 
   const raw = generateToken();
@@ -119,16 +132,33 @@ export async function forgot(db: Db, input: ForgotInput, ctx: ReqCtx): Promise<v
     expiresAt: new Date(Date.now() + RESET_TOKEN_TTL_MS),
   });
   const link = `${getEnv().APP_URL.replace(/\/$/, '')}/reset?token=${raw}`;
-  await sendEmail({
-    to: user.email,
-    subject: 'Reset your Avenue Stock password',
-    text: `Hello ${user.name},\n\nUse this link within 30 minutes to choose a new password:\n${link}\n\nIf you did not ask for this, ignore this email.`,
+  // The provider call runs after the response so its latency and failures never reveal
+  // whether the address exists; the client always gets 204.
+  deferred(async () => {
+    try {
+      await sendEmail({
+        to: user.email,
+        subject: 'Reset your Avenue Stock password',
+        text: `Hello ${user.name},\n\nUse this link within 30 minutes to choose a new password:\n${link}\n\nIf you did not ask for this, ignore this email.`,
+      });
+    } catch (err) {
+      logger.error({ err: describeError(err), userId: user.id }, 'password reset email failed');
+    }
   });
-  await audit(db, { userId: user.id, ip: ctx.ip, userAgent: ctx.userAgent }, 'auth.forgot', 'user', user.id, null, null);
+}
+
+/** Run work after the response is sent (Next `after()`); outside a request scope (tests, scripts) run it inline. */
+function deferred(fn: () => Promise<void>): void {
+  try {
+    after(fn);
+  } catch {
+    void fn();
+  }
 }
 
 /** Single-use token: sets the password, marks the token used and revokes every session. */
 export async function reset(db: Db, input: ResetInput, ctx: ReqCtx): Promise<void> {
+  await enforce(publicIpLimiter, ctx.ip ?? 'unknown');
   const tokenHash = hashToken(input.token);
   const now = new Date();
   const [row] = await db
@@ -146,6 +176,11 @@ export async function reset(db: Db, input: ResetInput, ctx: ReqCtx): Promise<voi
       .where(and(eq(passwordResetTokens.id, row.id), isNull(passwordResetTokens.usedAt)))
       .returning({ id: passwordResetTokens.id });
     if (!claimed) throw new AppError('VALIDATION', 'Invalid or expired token');
+    // Any other outstanding reset links for this user die with this one.
+    await tx
+      .update(passwordResetTokens)
+      .set({ usedAt: now })
+      .where(and(eq(passwordResetTokens.userId, row.userId), eq(passwordResetTokens.purpose, 'RESET'), isNull(passwordResetTokens.usedAt)));
     await tx.update(users).set({ passwordHash, mustChangePassword: false, updatedAt: now }).where(eq(users.id, row.userId));
     await revokeAllSessions(tx, row.userId);
     await audit(tx, { userId: row.userId, ip: ctx.ip, userAgent: ctx.userAgent }, 'user.password_reset', 'user', row.userId, null, null);

@@ -2,6 +2,7 @@ import { Ratelimit } from '@upstash/ratelimit';
 import { Redis } from '@upstash/redis';
 import { getEnv } from './env';
 import { AppError } from './errors';
+import { logger } from './logger';
 
 export interface LimitResult {
   success: boolean;
@@ -13,6 +14,8 @@ export interface LimitResult {
 export interface Limiter {
   limit(key: string): Promise<LimitResult>;
 }
+
+let warnedMemoryFallback = false;
 
 // Shared across in-memory limiters so tests can wipe state between cases.
 const memoryBuckets = new Map<string, number[]>();
@@ -50,8 +53,14 @@ function upstashLimiter(name: string, tokens: number, windowMs: number, url: str
 
 /** Sliding-window limiter: Upstash when configured, otherwise process memory (dev/tests). */
 export function createLimiter(name: string, tokens: number, windowMs: number): Limiter {
-  const { UPSTASH_REDIS_REST_URL: url, UPSTASH_REDIS_REST_TOKEN: token } = getEnv();
+  const env = getEnv();
+  const { UPSTASH_REDIS_REST_URL: url, UPSTASH_REDIS_REST_TOKEN: token } = env;
   if (url && token) return upstashLimiter(name, tokens, windowMs, url, token);
+  if (env.NODE_ENV === 'production' && !warnedMemoryFallback) {
+    // Per-instance memory is not shared across serverless instances: limits are effectively off.
+    warnedMemoryFallback = true;
+    logger.error('Upstash not configured: falling back to in-memory rate limiting');
+  }
   return memoryLimiter(name, tokens, windowMs);
 }
 
@@ -71,3 +80,5 @@ export const loginIpLimiter = createLimiter('login-ip', 5, 60_000);
 export const loginEmailLimiter = createLimiter('login-email', 10, 3_600_000);
 export const forgotEmailLimiter = createLimiter('forgot-email', 3, 3_600_000);
 export const apiUserLimiter = createLimiter('api-user', 120, 60_000);
+/** Public auth endpoints (setup, forgot, reset): coarse per-IP cap against token brute force and email bombing. */
+export const publicIpLimiter = createLimiter('public-ip', 20, 3_600_000);

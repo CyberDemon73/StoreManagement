@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { z } from 'zod';
 import { AppError, STATUS_BY_CODE } from '@/lib/errors';
-import { errorResponse, json, noContent } from '@/lib/http';
+import { describeError, errorResponse, getClientIp, json, noContent } from '@/lib/http';
 
 describe('AppError + errorResponse', () => {
   it('maps LOCKED to 423 with retryAfter in body and header', async () => {
@@ -46,5 +46,41 @@ describe('AppError + errorResponse', () => {
     expect(res.headers.get('X-Test')).toBe('1');
     expect(await res.json()).toEqual({ ok: true });
     expect(noContent().status).toBe(204);
+  });
+
+  it('API responses are never cached', () => {
+    expect(json({}).headers.get('Cache-Control')).toBe('no-store');
+    expect(noContent().headers.get('Cache-Control')).toBe('no-store');
+  });
+
+  it('describeError() never includes query params or the raw message of a database error', () => {
+    const dbErr = Object.assign(new Error('Failed query: insert into users ... params: $argon2id$v=19$m=65536,t=3,p=1$abc'), {
+      name: 'DrizzleQueryError',
+      params: ['owner@example.com', '$argon2id$v=19$m=65536,t=3,p=1$abc'],
+      cause: Object.assign(new Error('duplicate key value violates unique constraint "users_email_unique"'), { code: '23505' }),
+    });
+    const described = describeError(dbErr);
+    const text = JSON.stringify(described);
+    expect(text).not.toContain('argon2id');
+    expect(text).not.toContain('owner@example.com');
+    expect(described).toMatchObject({ name: 'DrizzleQueryError', code: '23505' });
+    expect(describeError(new Error('plain'))).toMatchObject({ name: 'Error', message: 'plain' });
+  });
+});
+
+describe('getClientIp', () => {
+  function withHeaders(h: Record<string, string>) {
+    return new Request('http://localhost:3000/x', { headers: h });
+  }
+  it('returns the first valid forwarded address', () => {
+    expect(getClientIp(withHeaders({ 'x-forwarded-for': '203.0.113.9, 10.0.0.1' }))).toBe('203.0.113.9');
+    expect(getClientIp(withHeaders({ 'x-forwarded-for': '2001:db8::1' }))).toBe('2001:db8::1');
+    expect(getClientIp(withHeaders({ 'x-real-ip': '198.51.100.7' }))).toBe('198.51.100.7');
+  });
+  it('returns null for anything that is not an IP address', () => {
+    expect(getClientIp(withHeaders({ 'x-forwarded-for': 'garbage' }))).toBeNull();
+    expect(getClientIp(withHeaders({ 'x-forwarded-for': '1.2.3.4:5678' }))).toBeNull();
+    expect(getClientIp(withHeaders({ 'x-real-ip': 'unknown' }))).toBeNull();
+    expect(getClientIp(withHeaders({}))).toBeNull();
   });
 });

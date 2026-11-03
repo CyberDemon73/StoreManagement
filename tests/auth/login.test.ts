@@ -131,3 +131,15 @@ describe('lockout and rate limits', () => {
     expect(otherIp.status).toBe(401);
   });
 });
+
+describe('client ip handling', () => {
+  it('still counts a failed login when the forwarded IP is not a valid address', async () => {
+    const db = getDb();
+    const u = await createUser(db, { role: 'SELLER' });
+    const res = await login({ email: u.email, password: 'wrong-password-123' }, { ip: 'garbage' });
+    expect(res.status).toBe(401);
+    const rows = await db.select().from(failedLogins);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.ip).toBeNull();
+  });
+});
