@@ -1,4 +1,5 @@
 'use client';
+import { QRCodeSVG } from 'qrcode.react';
 import { formatMoney, formatDate, formatTime, PAYMENT_LABEL } from '@/lib/format';
 import { cn } from '@/lib/cn';
 import { LogoMark } from './Brand';
@@ -6,10 +7,13 @@ import type { Sale, Settings } from '@/types';
 
 /** Print-friendly receipt (80 mm roll). Wrap in `.print-area` to be the only thing printed. */
 export function Receipt({ sale, settings, className }: { sale: Sale; settings?: Pick<Settings, 'storeName' | 'receiptHeader' | 'receiptFooter' | 'receiptShowLogo' | 'currency'>; className?: string }) {
-  const s = settings ?? { storeName: 'Avenue', receiptHeader: 'Tagamo3 · 02 2735 1180', receiptFooter: 'Exchanges within 14 days with receipt. Thank you.', receiptShowLogo: true, currency: 'EGP' };
+  const s = settings ?? { storeName: 'Avenue Brand', receiptHeader: 'Tagamo3 · 02 2735 1180', receiptFooter: 'Exchanges within 14 days with receipt. Thank you.', receiptShowLogo: true, currency: 'EGP' };
+  // QR encodes a canonical sale URL so the customer can open the receipt by scanning it.
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  const qrValue = `${origin}/sales/${sale.id}`;
   return (
     <div className={cn('print-area mx-auto w-full max-w-[320px] rounded-card border border-line bg-white p-4 font-mono text-[12px] leading-relaxed text-[#1F2421] print:max-w-none print:border-0 print:p-0', className)}>
-      {s.receiptShowLogo && <div className="mb-1 flex flex-col items-center gap-1"><LogoMark size={28} variant="mono" className="text-[#1F2421]" /><p className="text-center text-[14px] font-bold tracking-wide">{s.storeName.toUpperCase()} STOCK</p></div>}
+      {s.receiptShowLogo && <div className="mb-1 flex flex-col items-center gap-1"><LogoMark size={28} variant="mono" className="text-[#1F2421]" /><p className="text-center text-[14px] font-bold tracking-wide">{s.storeName.toUpperCase()}</p></div>}
       {s.receiptHeader && <p className="text-center">{s.receiptHeader}</p>}
       <p className="text-center">{sale.number} · {formatDate(sale.createdAt, 'DD/MM/YYYY')} {formatTime(sale.createdAt)}</p>
       <hr className="my-2 border-dashed border-[#9AA09B]" />
@@ -24,8 +28,10 @@ export function Receipt({ sale, settings, className }: { sale: Sale; settings?: 
       {sale.status !== 'COMPLETED' && <p className="mt-1 font-bold">{sale.status === 'VOID' ? '*** VOID ***' : sale.status === 'REFUNDED' ? '*** REFUNDED ***' : '*** PARTIALLY REFUNDED ***'}</p>}
       <p className="mt-2">Seller: {sale.sellerName} · Customer: {sale.customerName ?? 'Walk-in'}</p>
       {s.receiptFooter && <p className="mt-2 whitespace-pre-line text-center">{s.receiptFooter}</p>}
-      <div aria-hidden className="mx-auto mt-3 h-10 w-3/4" style={{ background: 'repeating-linear-gradient(90deg,#1F2421 0 2px,transparent 2px 4px,#1F2421 4px 5px,transparent 5px 8px)' }} />
-      <p className="tabular text-center text-[10px]">{sale.number}</p>
+      <div className="mt-3 flex flex-col items-center gap-1">
+        <QRCodeSVG value={qrValue} size={88} level="M" bgColor="#FFFFFF" fgColor="#1F2421" marginSize={0} />
+        <p className="tabular text-[10px]">{sale.number}</p>
+      </div>
     </div>
   );
 }
