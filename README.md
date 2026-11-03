@@ -1,82 +1,226 @@
-# Avenue Stock
+# Avenue Brand
 
-Inventory, sales and reporting for a single retail store with sized/colored products. Next.js 15 + Drizzle + Neon Postgres, deployed on Vercel. Installable PWA for phone, iPad and desktop. Roles: Admin, Manager, Seller.
+Inventory, point of sale and reporting for a single clothing store whose products come in sizes and colours. One Next.js app serves the API and the installable web app (phone, iPad and desktop) for three roles: **Admin**, **Manager** and **Seller**.
 
-## Quick start (local)
-Requirements: Node 22, pnpm 12 (`npm i -g pnpm@12`), a Neon project (free tier). Upstash and Resend are optional locally: without them the app uses an in-memory rate limiter and logs emails instead of sending them.
+**Live:** https://avenue-stock.vercel.app
+
+---
+
+## Contents
+- [Features](#features)
+- [Tech stack](#tech-stack)
+- [How it works](#how-it-works)
+- [Getting started](#getting-started)
+- [Scripts](#scripts)
+- [Environment variables](#environment-variables)
+- [Deployment](#deployment)
+- [Testing and CI](#testing-and-ci)
+- [Security](#security)
+- [Project layout](#project-layout)
+- [Documentation](#documentation)
+
+---
+
+## Features
+
+**Catalogue**
+- Products with a size × colour matrix of variants, each with its own SKU, barcode, cost, price and low-stock threshold.
+- Brands, a category tree (for example `Footwear / Sneakers`) and suppliers.
+- Size dropdown with store presets, letter, waist and shoe runs (footwear gets EU 30–50). Colour dropdown with common clothing colours, plus custom colours picked by name or with the phone's colour picker.
+- Product photos stored on Vercel Blob, re-encoded on upload.
+- CSV import with a dry run (row-by-row errors, all-or-nothing commit) and CSV export that re-imports unchanged.
+- Barcode scanning with the phone camera (EAN, UPC, Code 128/39, QR) with a beep on success, both at checkout and when labelling a variant. Printable barcode labels.
+
+**Selling**
+- Point of sale with scanning, cart parking, discounts (with a seller discount cap), cash, card, wallet and transfer payments.
+- Receipts sized for an 80 mm roll. On phones, **Print** produces a PDF and opens the share sheet.
+- Returns with refunds that never exceed what was paid, and voids. Every request that takes money is protected against double submission.
+
+**Stock**
+- A ledger: every quantity change is a stock movement, so stock can always be reconciled.
+- Receiving against purchases, adjustments with reasons, stock counts, and low and out-of-stock lists.
+
+**Reporting**
+- Dashboard and analytics in the store's timezone: sales, profit and margin trend, payment mix, top products and variants, brands, categories, size × colour, sellers, returns, slow movers, stock ageing, price list. CSV export for each report.
+
+**Team and administration**
+- Users with invitations (48-hour link) or temporary passwords, forced password change, password reset by email, session revocation.
+- Settings (store details, timezone, receipt text, discount cap, session lengths, presets), a searchable audit log, and in-app notifications (low stock, large refunds, new-device sign-ins, password resets, system alerts).
+- Branded HTML emails for invitations and password resets.
+
+**Operations**
+- A daily maintenance cron: purges, weekly stock reconciliation and a weekly private backup.
+- An admin-only full data export (zip of CSVs), a health check, structured logs with request ids.
+- An installable PWA with an offline page.
+
+## Tech stack
+
+| Area | Choice |
+|---|---|
+| App | Next.js 15 (App Router), React 19, TypeScript strict, Tailwind CSS 4 |
+| Data | Neon Postgres, Drizzle ORM (`drizzle-orm/neon-serverless`, interactive transactions), drizzle-kit migrations |
+| Validation | Zod (strict schemas everywhere) |
+| Auth | Server-side sessions in httpOnly `__Host-` cookies, Argon2id password hashing (`@node-rs/argon2`) |
+| Rate limits | Upstash Redis + `@upstash/ratelimit` |
+| Files | Vercel Blob (public store for images, private store for backups) |
+| Email | Resend |
+| Tests | Vitest on PGlite (Postgres in-process, real migrations) |
+| Hosting | Vercel (Hobby), Vercel Cron |
+| Package manager | pnpm 12 |
+
+## How it works
+
+- **Thin route handlers.** Every route under `src/app/api/v1/**/route.ts` follows the same steps: parse with a strict Zod schema, authorise with `withAuth({ permission })`, call a service, serialise. Business rules live in `src/services/`, and transactions start and end there.
+- **Stock only moves through the ledger.** `applyMovement()` in `src/services/stock.ts` is the only code that changes a variant's quantity. It locks the variant row (`SELECT … FOR UPDATE`) and writes a stock movement in the same transaction. `pnpm stock:verify` checks that every quantity equals the sum of its movements.
+- **Money is integer minor units** (piastres) everywhere. Totals, discounts, refunds, sale numbers and permissions are computed on the server; values sent by the browser are only hints.
+- **Role-aware output.** Sellers never receive cost, margin or profit fields; serializers strip them, and a test scans every seller-visible endpoint for them.
+- **Everything is audited.** Each change writes an audit row with before and after values. Errors always use the same envelope, `{ error: { code, message, fields? } }`, and never include stack traces.
+- **One source of truth for reports.** Analytics are SQL-first (`src/analytics/`) and built on shared fact queries, so the dashboard, per-sale profit and CSV exports agree.
+
+## Getting started
+
+Requirements: **Node 22**, **pnpm 12** (`npm i -g pnpm@12`) and a Neon project (the free tier is enough). Upstash, Resend and Blob are optional locally. Without them the app uses an in-memory rate limiter, logs emails instead of sending them, and refuses uploads.
 
 ```bash
 pnpm install
-cp .env.example .env        # fill DATABASE_URL, DATABASE_URL_UNPOOLED, SETUP_TOKEN
-pnpm db:migrate             # applies drizzle/*.sql to DATABASE_URL_UNPOOLED
-pnpm db:seed                # creates the settings row (catalogue seed arrives in Sprint 1)
-pnpm dev                    # http://localhost:3000
-pnpm test                   # Vitest against an in-process Postgres (PGlite) — no DB needed
+cp .env.example .env      # set DATABASE_URL, DATABASE_URL_UNPOOLED, SETUP_TOKEN
+pnpm db:migrate           # apply drizzle/*.sql
+pnpm dev                  # http://localhost:3000
 ```
 
-First run: `POST /api/v1/setup` with `{ name, email, password, storeName, currency, setupToken }` where `setupToken` equals `SETUP_TOKEN`. It works only while the `users` table is empty and returns the admin session cookie.
+**Create the first admin:** open `http://localhost:3000/setup` and enter your `SETUP_TOKEN`. Setup works only while there are no users.
 
-Every API mutation must send `Origin` (browser does) and the header `X-Requested-With: AvenueStock`, or the middleware answers 403.
+**Optional demo data:** `pnpm db:seed` adds a demo catalogue (only when no brands exist yet). `pnpm db:seed-users` adds a demo manager and two sellers with random passwords. Use both on development databases only.
 
-```bash
-curl -i -X POST http://localhost:3000/api/v1/setup \
-  -H 'content-type: application/json' -H 'origin: http://localhost:3000' -H 'x-requested-with: AvenueStock' \
-  -d '{"name":"Owner","email":"owner@example.com","password":"Zq9!vt-plume-orbit","storeName":"Avenue","currency":"EGP","setupToken":"<SETUP_TOKEN>"}'
-```
+**Testing on a phone over your LAN:** run `pnpm dev -H 0.0.0.0` and open `http://<your-computer-ip>:3000`. The camera scanner needs HTTPS, so use `next dev --experimental-https` or the deployed site to test scanning.
+
+**Calling the API directly:** every mutating request must send the browser `Origin` and the header `X-Requested-With: AvenueStock`, or it is rejected with 403. This is the protection against cross-site request forgery.
 
 ## Scripts
+
 | Script | What it does |
 |---|---|
-| `pnpm dev` / `pnpm build` / `pnpm start` | Next.js dev server / production build / serve build |
-| `pnpm typecheck` / `pnpm lint` / `pnpm test` | `tsc --noEmit` / ESLint / Vitest |
-| `pnpm db:generate` | Generate a migration from `src/db/schema/*` (drizzle-kit) |
-| `pnpm db:migrate` | Apply migrations to `DATABASE_URL_UNPOOLED` |
-| `pnpm db:seed` | Idempotent seed |
-| `pnpm stock:verify` | Ledger reconciliation (placeholder until Sprint 2) |
+| `pnpm dev` / `pnpm build` / `pnpm start` | Dev server, production build, serve the build |
+| `pnpm typecheck` / `pnpm lint` / `pnpm test` | TypeScript, ESLint, Vitest |
+| `pnpm db:generate` | Create a migration from `src/db/schema/*` |
+| `pnpm db:migrate` | Apply migrations to `DATABASE_URL_UNPOOLED` (falls back to `DATABASE_URL`) |
+| `pnpm db:seed` | Demo catalogue, only when no brands exist |
+| `pnpm db:seed-users` | Demo staff accounts, development only |
+| `pnpm db:seed-big` | About 10,000 sales for performance checks, development only |
+| `pnpm stock:verify` | Reconcile every variant's quantity against the ledger |
+| `pnpm secrets:scan` | Scan tracked files for leaked keys and tokens |
 
-## Deploy to Vercel
-1. **Neon:** create a project. Extensions (`citext`, `pg_trgm`) are created by migration `0000_extensions.sql`; Neon's default role may create them. Copy the pooled string as `DATABASE_URL` and the direct string as `DATABASE_URL_UNPOOLED`.
-2. **Upstash:** create a Redis database; copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
-3. **Resend:** create an API key and a verified sender; set `RESEND_API_KEY` and `EMAIL_FROM`.
-4. **Vercel:** import the repo (framework Next.js, root `/`, build `pnpm build`). In Project Settings select Node.js 22, and set `ENABLE_EXPERIMENTAL_COREPACK=1` in the Vercel env so the pnpm 12 pinned in `packageManager` is used. Add the environment variables below for Production and Preview (use a separate Neon branch for Preview). `APP_URL` must be set per environment: Preview deployments need their own `APP_URL` (or a fixed preview domain), otherwise every mutation is rejected with 403 by the CSRF origin check. Function region: closest to Neon.
-5. Run migrations against production once before the first deploy: `DATABASE_URL_UNPOOLED=<prod direct url> pnpm db:migrate`. Migrations are NOT run in the Vercel build: run `pnpm db:migrate` manually or from CI before each deploy that ships a migration. A build-step migration would race between concurrent builds and would target whatever database the Preview environment points to.
-6. Deploy, then open `https://<app>/setup` (or call `POST /api/v1/setup`) with `SETUP_TOKEN` to create the admin.
+## Environment variables
 
-### Environment variables (set in Vercel)
-| Variable | Required | Purpose |
+All variables are listed with comments in `.env.example`. Production refuses to start if a required one is missing, so the app never silently falls back to in-memory limits or unsent email.
+
+| Variable | Production | Purpose |
 |---|---|---|
-| `DATABASE_URL` | yes | Neon pooled connection (runtime) |
-| `DATABASE_URL_UNPOOLED` | yes | Neon direct connection (migrations) |
-| `APP_URL` | yes | Public origin, e.g. `https://stock.example.com`; used for the CSRF origin check and email links |
-| `SETUP_TOKEN` | yes | One-time token (≥16 chars, `openssl rand -hex 16`) required by `POST /setup` |
-| `SESSION_SECRET` | no (reserved, not used yet) | 32+ random bytes base64 (`openssl rand -base64 32`); reserved for signed non-session cookies |
-| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | prod yes | Distributed rate limits. Unset → in-memory limiter (per instance; fine for local dev only) |
-| `RESEND_API_KEY` / `EMAIL_FROM` | prod yes | Password reset emails. Unset → emails are logged, not sent |
-| `CRON_SECRET` | later | Bearer token for Vercel Cron routes (Sprint 6) |
-| `BLOB_READ_WRITE_TOKEN` | prod yes (Sprint 1) | Product image uploads via Vercel Blob (injected when the store is linked). Unset locally → uploads return 500 "Storage not configured" |
-| `LOG_LEVEL` | no | pino level, default `info` |
+| `DATABASE_URL` | required | Neon pooled connection used at runtime |
+| `DATABASE_URL_UNPOOLED` | recommended | Neon direct connection used by migrations |
+| `APP_URL` | required | Public address, e.g. `https://avenue-stock.vercel.app`. Used for email links and the cross-site request check |
+| `SETUP_TOKEN` | required | One-time token for `/setup` (at least 16 characters, `openssl rand -hex 16`). Rotate after setup |
+| `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | required | Shared rate limits. The `KV_REST_API_URL` / `KV_REST_API_TOKEN` names injected by the Vercel Upstash integration also work |
+| `RESEND_API_KEY` / `EMAIL_FROM` | required | Invitation and password-reset email. Without a verified domain, Resend only delivers to the account owner |
+| `BLOB_READ_WRITE_TOKEN` | for photos | Public Vercel Blob store for product images |
+| `BACKUP_BLOB_READ_WRITE_TOKEN` | for backups | Private Vercel Blob store for the weekly backup (falls back to `BLOB_READ_WRITE_TOKEN`) |
+| `CRON_SECRET` | for cron | At least 32 characters; Vercel sends it as `Authorization: Bearer …` to `/api/v1/cron/daily` |
+| `SESSION_SECRET` | optional | Reserved for signing non-session cookies |
+| `LOG_LEVEL` | optional | pino log level, default `info` |
+| `NEXT_PUBLIC_USE_MOCK` | never | `1` runs the UI against an in-browser mock store, for design work only |
 
-See `docs/DEPLOYMENT.md` for the free-tier walkthrough.
+On Vercel, also set `ENABLE_EXPERIMENTAL_COREPACK=1` so the build uses pnpm 12.
 
-## Working with Claude Code
-1. Install Superpowers once: see `docs/SUPERPOWERS.md`.
-2. Open Claude Code in this folder. It reads `CLAUDE.md` automatically.
-3. Run sprints: `/sprint 0`, `/sprint 1`, … (checklists in `docs/SPRINTS.md`).
-4. Other skills: `/api-endpoint`, `/db-migration`, `/analytics-query`, `/security-review`.
+## Deployment
 
-## Docs
-| File | Purpose |
+The app runs on free tiers: Vercel Hobby, Neon, Upstash, Vercel Blob and Resend. The full walkthrough, with a go-live checklist, is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md). In short:
+
+1. Create the Neon database, the Upstash Redis database (via the Vercel Marketplace), a public Blob store for images, a private one for backups, and a Resend API key.
+2. Set the environment variables above in Vercel for Production and Preview. Previews should use a Neon branch, never the production database.
+3. Run migrations before deploying any change that adds a file under `drizzle/`:
+   ```bash
+   DATABASE_URL_UNPOOLED=<direct url> pnpm db:migrate
+   ```
+   Migrations never run inside the Vercel build; parallel builds would race.
+4. Deploy (`vercel deploy --prod`, or by connecting the GitHub repo in Vercel), then open `/setup` once to create the admin.
+5. The daily cron in `vercel.json` (`0 2 * * *` UTC) runs the purges, and on Sundays (store time) the stock check and the backup. Trigger it once from Vercel → Cron Jobs to confirm.
+
+Health check: `GET /api/v1/health` returns `{ "ok": true, "db": "up" }`, or 503 when the database is unreachable.
+
+## Testing and CI
+
+```bash
+pnpm test                          # full suite on PGlite, no database needed
+PERF=1 pnpm vitest run tests/perf  # EXPLAIN checks on a 10k-sale dataset
+```
+
+- Every endpoint has at least a success test and a permission test.
+- `tests/authz/matrix.test.ts` checks every route in `src/lib/route-manifest.ts` for every role, and fails if a route file is missing from the manifest.
+- `tests/concurrency/` runs parallel sales against a real Postgres to prove the stock locks. It runs when `DATABASE_URL_TEST` is set.
+
+GitHub Actions (`.github/workflows/ci.yml`) runs on every push to `main` and `sprint-*` branches and on every pull request:
+- lint, typecheck and tests
+- a migration drift check (`db:generate` must produce no changes)
+- `drizzle-kit check`
+- `pnpm audit --audit-level=high`
+- the secrets scan
+- a separate job that runs the concurrency tests on a Postgres 16 service
+
+Dependabot opens weekly update pull requests.
+
+## Security
+
+The full requirements and threat notes are in [`docs/SECURITY.md`](docs/SECURITY.md). Highlights:
+
+- **Passwords:** Argon2id, at least 10 characters, common passwords rejected.
+- **Account lockout:** after repeated failures, with rate limits on login, password reset, setup and password change.
+- **Sessions:** server-side, stored as hashes, `__Host-` httpOnly Secure SameSite=Lax cookies, idle and absolute expiry. They are revoked on password change, disable or role change.
+- **Peer resets are visible:** only an Admin can manage Admin accounts. A password reset by a manager emails the account owner and notifies every Admin.
+- **Headers and request checks:**
+  - A strict Content Security Policy with a per-request nonce.
+  - HSTS, which keeps browsers on HTTPS, with preload.
+  - The `X-Frame-Options: DENY`, `nosniff`, `Referrer-Policy` and `Permissions-Policy` headers.
+  - A cross-site request check on every API mutation.
+- **Untrusted input:**
+  - Uploads are checked by their real file signature and re-encoded.
+  - CSV exports neutralise spreadsheet formulas.
+  - NUL bytes are rejected.
+  - Search input is escaped.
+
+Report security issues privately to the repository owner, not as a public issue.
+
+## Project layout
+
+```
+src/
+  app/api/v1/**/route.ts   thin route handlers: parse → authorise → service → serialise
+  app/(app)/**             signed-in pages (dashboard, sell, products, stock, sales, users, settings…)
+  app/(auth)/**            login, setup, password reset, invitation
+  db/schema/*.ts           tables by area: auth, catalog, stock, sales, system
+  db/migrate.ts  seed.ts   migrations runner and demo seed
+  services/*.ts            business logic and transaction boundaries
+  analytics/*.ts           SQL-first report queries
+  serializers/*.ts         role-aware output (sellers never see cost or profit)
+  schemas/*.ts             strict Zod input schemas
+  lib/                     auth, permissions, money, audit, rate limits, email templates, HTTP helpers
+  screens/  components/    UI screens and shared components
+drizzle/                   generated SQL migrations (each with a rollback note)
+tests/                     Vitest suites per route group and service
+scripts/                   seed-big, seed-users, scan-secrets
+docs/                      specifications, decisions, deployment, sprint plans
+public/                    manifest, service worker, icons
+```
+
+## Documentation
+
+| File | Contents |
 |---|---|
-| `CLAUDE.md` | Rules and workflow for Claude Code |
-| `docs/DATA-MODEL.md` | Tables, invariants, derived rules |
-| `docs/API-SPEC.md` | Every endpoint, body, response, permission |
-| `docs/ACCESS-MATRIX.md` | Roles × permissions × pages |
-| `docs/SECURITY.md` | Hardening requirements |
-| `docs/SPRINTS.md` | Backend sprint checklists |
-| `docs/DEPLOYMENT.md` | Free-tier setup on Vercel/Neon/Upstash/Resend |
-| `docs/SUPERPOWERS.md` | Engineering workflow plugin |
-| `docs/DECISIONS.md` | Running log of decisions |
-| `docs/plans/` | Superpowers plans per sprint |
-
-## Frontend
-Designed with Claude Design (prompt in `starter-kit/01-FRONTEND-PROMPT-CLAUDE-DESIGN.md`) and built inside this app under `src/app/(app)`, `src/components`, `src/screens` with a typed client in `src/lib/api.ts` (see `docs/plans/frontend.md`).
+| [`docs/DATA-MODEL.md`](docs/DATA-MODEL.md) | Tables, invariants and derived rules |
+| [`docs/API-SPEC.md`](docs/API-SPEC.md) | Every endpoint with body, response and permission |
+| [`docs/ACCESS-MATRIX.md`](docs/ACCESS-MATRIX.md) | Roles × permissions × pages |
+| [`docs/SECURITY.md`](docs/SECURITY.md) | Security requirements and threat notes |
+| [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) | Free-tier deployment and go-live checklist |
+| [`docs/DECISIONS.md`](docs/DECISIONS.md) | Log of design decisions and their reasons |
+| [`docs/BRAND.md`](docs/BRAND.md) | Logo, colours and tone of voice |
+| [`docs/SPRINTS.md`](docs/SPRINTS.md) | Build plan, sprint by sprint, and the Phase 2 backlog |
+| [`CLAUDE.md`](CLAUDE.md) | Working rules for AI-assisted development in this repo |
