@@ -15,6 +15,7 @@ import { Combobox } from '@/components/ui/Controls';
 import { Badge, Chip, ColorSwatch, Thumb } from '@/components/ui/Badge';
 import { KpiCard } from '@/components/ui/Card';
 import { VariantMatrix } from '@/components/app/VariantMatrix';
+import { BarcodeCaptureButton } from '@/components/app/BarcodeScanner';
 import type { Brand, Category, ColorRef, Settings } from '@/types';
 import { type Derived, type FormErrors, type ProductFormState, type SectionCheck, variantSku } from './product-form';
 
@@ -111,7 +112,9 @@ export function ImagesSection({ form, set, tint }: Pick<SectionProps, 'form' | '
 }
 
 /* ---------- 3 · Variants ---------- */
-export function VariantsSection({ form, set, errors, settings }: SectionProps & { settings: Settings | undefined }) {
+const CUSTOM_COLOR = '__custom__';
+
+export function VariantsSection({ form, set, errors, settings, showBarcodes = false }: SectionProps & { settings: Settings | undefined; showBarcodes?: boolean }) {
   const presets = settings?.sizePresets ?? [];
   const [presetName, setPresetName] = useState<string>(() => presets[0]?.name ?? '');
   const [customSize, setCustomSize] = useState<string | null>(null);
@@ -128,6 +131,9 @@ export function VariantsSection({ form, set, errors, settings }: SectionProps & 
   // keep matrix order stable: sizes in option order, colors in option order
   const orderedSizes = sizeOptions.filter((s) => form.sizes.includes(s));
   const orderedColors = colorOptions.filter((c) => form.colors.some((x) => x.name === c.name));
+  const remainingColors = colorOptions.filter((c) => !form.colors.some((x) => x.name === c.name));
+  const [showCustomColor, setShowCustomColor] = useState(false);
+  const setBarcode = (key: string, code: string) => set({ barcodes: { ...(form.barcodes ?? {}), [key]: code } });
   return (
     <>
       <div className="grid gap-5 md:grid-cols-2">
@@ -143,12 +149,28 @@ export function VariantsSection({ form, set, errors, settings }: SectionProps & 
         </fieldset>
         <fieldset className="flex flex-col gap-2.5">
           <legend className="mb-2 text-[13px] font-medium">Colors</legend>
-          <div className="flex flex-wrap gap-2">{colorOptions.map((c) => <Chip key={c.name} selected={form.colors.some((x) => x.name === c.name)} onClick={() => toggleColor(c)} leading={<ColorSwatch hex={c.hex} name={c.name} />}>{c.name}</Chip>)}</div>
-          <div className="flex items-center gap-2">
+          <Select
+            aria-label="Add a color"
+            value=""
+            onChange={(e) => {
+              const v = e.target.value;
+              if (v === CUSTOM_COLOR) { setShowCustomColor(true); return; }
+              const c = colorOptions.find((x) => x.name === v);
+              if (c) toggleColor(c);
+            }}
+          >
+            <option value="">{remainingColors.length ? 'Add a color…' : 'All preset colors added'}</option>
+            {remainingColors.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
+            <option value={CUSTOM_COLOR}>Custom color…</option>
+          </Select>
+          {orderedColors.length > 0 && (
+            <div className="flex flex-wrap gap-2">{orderedColors.map((c) => <Chip key={c.name} selected onRemove={() => toggleColor(c)} aria-label={`Remove ${c.name}`} leading={<ColorSwatch hex={c.hex} name={c.name} />}>{c.name}</Chip>)}</div>
+          )}
+          {showCustomColor && <div className="flex items-center gap-2">
             <Input size="sm" aria-label="Custom color name" placeholder="Custom name" value={colorName} onChange={(e) => setColorName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addColor(); } }} wrapperClassName="flex-1" />
             <Input size="sm" aria-label="Hex" value={colorHex} onChange={(e) => setColorHex(e.target.value)} wrapperClassName="w-28" className="tabular" invalid={!hexOk} leading={<ColorSwatch hex={hexOk ? colorHex : '#FFFFFF'} />} />
             <Button size="sm" onClick={addColor} disabled={!colorName.trim() || !hexOk}>Add</Button>
-          </div>
+          </div>}
         </fieldset>
       </div>
       <div className="flex flex-col gap-3 rounded-card border border-line bg-surface-2/50 p-3">
@@ -163,6 +185,21 @@ export function VariantsSection({ form, set, errors, settings }: SectionProps & 
             : <div className="flex flex-wrap gap-1.5 text-xs text-ink-2">{orderedSizes.map((s) => <span key={s} className="tabular rounded-md bg-surface px-2 py-1">{s} × {orderedColors.length}</span>)}</div>
         ) : <p className="text-xs text-ink-2">Pick at least one size and one color to preview the variants.</p>}
       </div>
+      {showBarcodes && orderedSizes.length > 0 && orderedColors.length > 0 && (
+        <fieldset className="flex flex-col gap-2 rounded-card border border-line p-3">
+          <legend className="px-1 text-[13px] font-medium">Barcodes <span className="font-normal text-ink-2">· optional, scan or type</span></legend>
+          {orderedSizes.flatMap((s) => orderedColors.map((c) => {
+            const key = `${s}|${c.name}`;
+            return (
+              <div key={key} className="flex items-center gap-2">
+                <span className="flex w-28 shrink-0 items-center gap-1.5 truncate text-xs"><ColorSwatch hex={c.hex} name={c.name} />{s} · {c.name}</span>
+                <Input size="sm" inputMode="numeric" aria-label={`Barcode for ${s} ${c.name}`} placeholder="Barcode" value={form.barcodes?.[key] ?? ''} onChange={(e) => setBarcode(key, e.target.value)} wrapperClassName="flex-1" className="tabular" />
+                <BarcodeCaptureButton size="sm" label="Scan" aria-label={`Scan barcode for ${s} ${c.name}`} onCode={(code) => setBarcode(key, code)} />
+              </div>
+            );
+          }))}
+        </fieldset>
+      )}
     </>
   );
 }

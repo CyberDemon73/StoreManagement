@@ -22,6 +22,13 @@ import { checklist, derive, DRAFT_KEY, type DraftRecord, EMPTY_FORM, type FormEr
 import { useCatalog } from './products-shared';
 import { BasicsSection, ImagesSection, PricingSection, ReviewRail, SectionCard, VariantsSection } from './ProductEditSections';
 
+/** Only non-empty barcodes for cells that are still in the matrix. */
+function cleanBarcodes(form: ProductFormState): Record<string, string> | undefined {
+  const keys = new Set(form.sizes.flatMap((s) => form.colors.map((c) => `${s}|${c.name}`)));
+  const out = Object.fromEntries(Object.entries(form.barcodes ?? {}).map(([k, v]): [string, string] => [k, v.trim()]).filter(([k, v]) => v !== '' && keys.has(k)));
+  return Object.keys(out).length ? out : undefined;
+}
+
 export function ProductEditScreen({ id }: { id?: string }) {
   const isEdit = !!id;
   const router = useRouter();
@@ -88,7 +95,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
         const newColors: ColorRef[] = form.colors.filter((c) => !product.data!.colors.some((x) => x.name === c.name));
         if (newSizes.length || newColors.length) await api.products.addVariants(id, { sizes: form.sizes, colors: form.colors });
       } else {
-        const created = await api.products.create({ ...base, images, variants: { sizes: form.sizes, colors: form.colors, initialQty: form.setInitialQty ? form.initialQty : 0, costPrice: form.defaultCost, sellPrice: form.defaultPrice } });
+        const created = await api.products.create({ ...base, images, variants: { sizes: form.sizes, colors: form.colors, initialQty: form.setInitialQty ? form.initialQty : 0, barcodes: cleanBarcodes(form), costPrice: form.defaultCost, sellPrice: form.defaultPrice } });
         productId = created.id;
         await applyOverrides(created.variants);
       }
@@ -139,7 +146,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
             <SectionCard id={`m-${step}`} title={`${step + 1} · ${stepLabel}`}>
               {step === 0 && <BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} />}
               {step === 1 && <ImagesSection form={form} set={set} tint={tint} />}
-              {step === 2 && <VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} />}
+              {step === 2 && <VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} />}
               {step === 3 && <PricingSection form={form} set={set} errors={shownErrors} derived={derived} />}
               {step === 4 && <ReviewRail checks={checks} derived={derived} isEdit={isEdit} onSave={() => void submit()} onDraft={saveDraft} saving={saving} draftLabel={draftLabel} onJump={(k) => setStep(STEPS.indexOf(k))} />}
             </SectionCard>
@@ -170,7 +177,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
             <div className="flex min-w-0 flex-col gap-4">
               <SectionCard id="s-basics" title="1 · Basics"><BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} /></SectionCard>
               <SectionCard id="s-images" title="2 · Images"><ImagesSection form={form} set={set} tint={tint} /></SectionCard>
-              <SectionCard id="s-variants" title="3 · Variants"><VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} /></SectionCard>
+              <SectionCard id="s-variants" title="3 · Variants"><VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} /></SectionCard>
               <SectionCard id="s-pricing" title="4 · Pricing"><PricingSection form={form} set={set} errors={shownErrors} derived={derived} /></SectionCard>
             </div>
             <div className="xl:sticky xl:top-20">

@@ -23,6 +23,8 @@ export interface ProductFormState {
   setInitialQty: boolean;
   /** Keyed `size|color` (matrixKey). */
   initialQty: Record<string, number>;
+  /** Optional scanned/typed barcodes keyed `size|color` (new products only). */
+  barcodes?: Record<string, string>;
   defaultCost?: number;
   defaultPrice?: number;
   /** Per-variant cost/price overrides keyed `size|color`. */

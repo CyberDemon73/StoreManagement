@@ -156,6 +156,18 @@ export async function addVariantsTx(tx: Db, user: AuthUser, product: ProductRow,
       seenSkus.add(sku);
     }
   }
+  // Barcodes must label real cells of this matrix and be unique within the request; clashes with
+  // other products surface as the DB unique violation (409 fields.barcode).
+  const cellKeys = new Set(matrix.sizes.flatMap((s) => matrix.colors.map((c) => `${s}|${c.name}`)));
+  const seenBarcodes = new Map<string, string>();
+  for (const [key, code] of Object.entries(matrix.barcodes ?? {})) {
+    if (!cellKeys.has(key)) {
+      throw new AppError('VALIDATION', 'Invalid variant matrix', { fields: { variants: `Barcode for "${key}" does not match any size and colour` } });
+    }
+    const other = seenBarcodes.get(code);
+    if (other) throw new AppError('VALIDATION', 'Invalid variant matrix', { fields: { variants: `Barcode ${code} is used for both ${other} and ${key}` } });
+    seenBarcodes.set(code, key);
+  }
 
   const { lowStockDefault } = await getSettings(tx);
   const sellPrice = matrix.sellPrice ?? product.defaultPrice;
@@ -179,6 +191,7 @@ export async function addVariantsTx(tx: Db, user: AuthUser, product: ProductRow,
             colorName: color.name,
             colorHex: color.hex,
             sku: buildSku(product.baseSku, size, color.name),
+            barcode: matrix.barcodes?.[key] ?? null,
             sellPrice,
             costPrice,
             lowStockThreshold: lowStockDefault,

@@ -21,6 +21,8 @@ export const variantMatrixBody = z
     colors: z.array(colorRef).min(1).max(30),
     /** A single quantity for every cell, or a map keyed "<size>|<colorName>". */
     initialQty: z.union([qty, z.record(z.string(), qty)]).optional(),
+    /** Scanned/typed barcodes keyed "<size>|<colorName>"; cells without one stay unlabelled. */
+    barcodes: z.record(z.string(), z.string().trim().min(4).max(32)).optional(),
     costPrice: money.optional(),
     sellPrice: money.optional(),
   })

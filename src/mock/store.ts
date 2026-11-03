@@ -150,7 +150,7 @@ function uniqColors(cs: ColorRef[]): ColorRef[] { const m = new Map(cs.map((c) =
 
 export interface CreateProductInput {
   name: string; brandId: string; categoryId: string; description?: string; baseSku?: string; images?: string[]; defaultCost?: number; defaultPrice: number; tags?: string[];
-  variants?: { sizes: string[]; colors: ColorRef[]; initialQty?: Record<string, number> | number; costPrice?: number; sellPrice?: number };
+  variants?: { sizes: string[]; colors: ColorRef[]; initialQty?: Record<string, number> | number; barcodes?: Record<string, string>; costPrice?: number; sellPrice?: number };
 }
 export function createProduct(input: CreateProductInput, userId: string): ProductDetail {
   const baseSku = input.baseSku?.trim() || `${(brandOf(input.brandId)?.name ?? 'XX').slice(0, 2).toUpperCase()}-${input.name.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase()}`;

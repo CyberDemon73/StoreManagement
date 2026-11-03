@@ -25,6 +25,40 @@ const matrix = {
   costPrice: 400,
 };
 
+describe('POST /products barcodes', () => {
+  const create = (cookie: string, brandId: string, categoryId: string, name: string, barcodes: Record<string, string>) =>
+    call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { name, brandId, categoryId, defaultPrice: 1000, variants: { ...matrix, barcodes } } });
+
+  it('stores a scanned barcode on each matching cell', async () => {
+    const { brand, category, cookie } = await fixture();
+    const res = await create(cookie, brand.id, category.id, 'Chino Slim', { 'S|Black': '6221234567890', 'M|Navy Blue': '6221234567891' });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const bySku = Object.fromEntries(body.variants.map((v: { sku: string; barcode?: string }) => [v.sku, v.barcode]));
+    expect(bySku['NO-CHI-S-BLACK']).toBe('6221234567890');
+    expect(bySku['NO-CHI-M-NAVYBLUE']).toBe('6221234567891');
+    expect(bySku['NO-CHI-S-NAVYBLUE']).toBeUndefined();
+  });
+
+  it('rejects the same barcode on two cells, and a key outside the matrix', async () => {
+    const { brand, category, cookie } = await fixture();
+    const dup = await create(cookie, brand.id, category.id, 'Chino Slim', { 'S|Black': '6221234567890', 'M|Black': '6221234567890' });
+    expect(dup.status).toBe(400);
+    expect((await dup.json()).error.fields.variants).toMatch(/6221234567890/);
+    const stray = await create(cookie, brand.id, category.id, 'Chino Slim', { 'XL|Red': '6221234567892' });
+    expect(stray.status).toBe(400);
+  });
+
+  it('answers 409 fields.barcode when another product already uses the code, writing nothing', async () => {
+    const { db, brand, category, cookie } = await fixture();
+    expect((await create(cookie, brand.id, category.id, 'First', { 'S|Black': '6221234567890' })).status).toBe(201);
+    const res = await create(cookie, brand.id, category.id, 'Second', { 'M|Black': '6221234567890' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.fields).toMatchObject({ barcode: 'Barcode already exists' });
+    expect((await db.select({ n: count() }).from(products))[0]!.n).toBe(1);
+  });
+});
+
 describe('POST /products', () => {
   it('creates a product with a size×color matrix and INITIAL movements only for stocked cells', async () => {
     const { db, brand, category, cookie } = await fixture();
