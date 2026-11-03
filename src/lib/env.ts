@@ -10,8 +10,11 @@ const envSchema = z.object({
   APP_URL: z.string().url().default('http://localhost:3000'),
   SESSION_SECRET: z.string().min(1).optional(),
   BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
+  // Private store for weekly backups; product images live in a public store.
+  BACKUP_BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),
   SETUP_TOKEN: z.string().min(16).optional(),
-  CRON_SECRET: z.string().min(1).optional(),
+  // Bearer for Vercel Cron; long enough that guessing is not a concern (openssl rand -hex 32).
+  CRON_SECRET: z.string().min(32, 'CRON_SECRET must be at least 32 characters').optional(),
   VERCEL_ENV: z.enum(['production', 'preview', 'development']).optional(),
   NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
   LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),

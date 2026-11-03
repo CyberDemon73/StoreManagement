@@ -1,4 +1,4 @@
-import { put } from '@vercel/blob';
+import { del, list, put } from '@vercel/blob';
 import { and, isNotNull, isNull, lt, ne, or, sql } from 'drizzle-orm';
 import type { Db } from '@/db/client';
 import { failedLogins, idempotencyKeys, notifications, passwordResetTokens, sessions, users } from '@/db/schema';
@@ -28,7 +28,7 @@ export interface PurgeCounts {
   failedLogins: number;
 }
 
-export type BackupResult = { status: 'uploaded'; path: string } | { status: 'skipped'; reason: string } | { status: 'failed' };
+export type BackupResult = { status: 'uploaded'; path: string; pruned: number } | { status: 'skipped'; reason: string } | { status: 'failed' };
 
 export interface MaintenanceResult {
   purged: PurgeCounts;
@@ -38,13 +38,49 @@ export interface MaintenanceResult {
   backup?: BackupResult;
 }
 
-export type BackupWriter = (pathname: string, body: Uint8Array) => Promise<unknown>;
+/** Weekly backups older than this are deleted after the next successful upload. */
+export const BACKUP_RETENTION_MS = 12 * 7 * DAY;
+const BACKUP_PREFIX = 'backups/';
 
-let testWriter: BackupWriter | null = null;
+interface BlobOpts {
+  token: string | undefined;
+}
+export interface BackupBlob {
+  pathname: string;
+  url: string;
+  uploadedAt: Date;
+}
+export interface BackupStore {
+  write: (pathname: string, body: Uint8Array, opts: BlobOpts) => Promise<unknown>;
+  list: (opts: BlobOpts & { prefix: string }) => Promise<BackupBlob[]>;
+  del: (urls: string[], opts: BlobOpts) => Promise<unknown>;
+}
 
-/** Test seam: capture backup uploads instead of calling Vercel Blob. Pass null to restore. */
-export function setBackupWriterForTests(fn: BackupWriter | null): void {
-  testWriter = fn;
+const blobStore: BackupStore = {
+  // Backups hold every customer phone and cost price: private blob, never public.
+  write: (path, body, { token }) =>
+    put(path, Buffer.from(body), { access: 'private', contentType: 'application/zip', addRandomSuffix: false, allowOverwrite: true, token }),
+  list: async ({ prefix, token }) => {
+    const out: BackupBlob[] = [];
+    let cursor: string | undefined;
+    do {
+      const page = await list({ prefix, token, cursor });
+      out.push(...page.blobs.map((b) => ({ pathname: b.pathname, url: b.url, uploadedAt: new Date(b.uploadedAt) })));
+      cursor = page.hasMore ? page.cursor : undefined;
+    } while (cursor);
+    return out;
+  },
+  del: (urls, { token }) => del(urls, { token }),
+};
+
+let testStore: BackupStore | null = null;
+
+/**
+ * Test seam: capture backup uploads (and fake list/delete) instead of calling Vercel Blob.
+ * `list` defaults to an empty store and `del` to a no-op. Pass null to restore.
+ */
+export function setBackupStoreForTests(store: (Pick<BackupStore, 'write'> & Partial<BackupStore>) | null): void {
+  testStore = store ? { list: async () => [], del: async () => undefined, ...store } : null;
 }
 
 const before = (now: Date, ms: number) => new Date(now.getTime() - ms);
@@ -126,28 +162,54 @@ async function weeklyStockVerify(db: Db, localDate: string): Promise<{ ok: boole
   return { ok, mismatches: mismatches.length };
 }
 
-async function weeklyBackup(db: Db, localDate: string): Promise<BackupResult> {
-  const token = getEnv().BLOB_READ_WRITE_TOKEN;
-  if (!testWriter && !token) return { status: 'skipped', reason: 'BLOB_READ_WRITE_TOKEN not set' };
-  const path = `backups/${localDate}.zip`;
+const errInfo = (err: unknown) => {
+  const e = err instanceof Error ? err : new Error(String(err));
+  return { name: e.name, message: e.message };
+};
+
+/** Deletes backups past retention. Best effort: a failure is logged, never fails the backup. */
+async function pruneBackups(store: BackupStore, opts: BlobOpts, now: Date, keep: string): Promise<number> {
   try {
-    const { zip } = await buildDataExport(db);
-    if (testWriter) await testWriter(path, zip);
-    // Backups hold every customer phone and cost price: private blob, never public.
-    else await put(path, Buffer.from(zip), { access: 'private', contentType: 'application/zip', addRandomSuffix: false, allowOverwrite: true, token });
-    return { status: 'uploaded', path };
+    const cut = now.getTime() - BACKUP_RETENTION_MS;
+    const old = (await store.list({ ...opts, prefix: BACKUP_PREFIX })).filter(
+      (b) => b.pathname.startsWith(BACKUP_PREFIX) && b.pathname !== keep && b.uploadedAt.getTime() < cut,
+    );
+    if (old.length === 0) return 0;
+    await store.del(
+      old.map((b) => b.url),
+      opts,
+    );
+    return old.length;
   } catch (err) {
-    const e = err instanceof Error ? err : new Error(String(err));
-    logger.error({ err: { name: e.name, message: e.message } }, 'weekly backup upload failed');
+    logger.error({ err: errInfo(err) }, 'weekly backup prune failed');
+    return 0;
+  }
+}
+
+async function weeklyBackup(db: Db, localDate: string, now: Date): Promise<BackupResult> {
+  const env = getEnv();
+  // Product images use a public store; backups must go to a separate private one when configured.
+  const token = env.BACKUP_BLOB_READ_WRITE_TOKEN ?? env.BLOB_READ_WRITE_TOKEN;
+  if (!testStore && !token) return { status: 'skipped', reason: 'BACKUP_BLOB_READ_WRITE_TOKEN / BLOB_READ_WRITE_TOKEN not set' };
+  const store = testStore ?? blobStore;
+  const path = `${BACKUP_PREFIX}${localDate}.zip`;
+  try {
+    // Rows are paged through the streamed export; only the compressed zip is collected here.
+    const { zip } = await buildDataExport(db);
+    await store.write(path, zip, { token });
+  } catch (err) {
+    logger.error({ err: errInfo(err) }, 'weekly backup upload failed');
     await notifyAdmins(db, {
       kind: 'SYSTEM',
       title: 'Weekly backup failed',
-      body: 'The weekly data backup could not be uploaded. Download a data export from Settings and check the Vercel Blob store.',
+      body: 'The weekly data backup could not be uploaded. Download a data export from Settings, and check that the backup Blob store is private and its token (BACKUP_BLOB_READ_WRITE_TOKEN) is valid.',
       href: '/settings',
       dedupeKey: `backup-failed:${localDate}`,
     });
     return { status: 'failed' };
   }
+  const pruned = await pruneBackups(store, { token }, now, path);
+  return { status: 'uploaded', path, pruned };
 }
 
 /** Daily: purge stale rows. Sundays (store timezone): stock reconciliation + private backup. */
@@ -157,6 +219,6 @@ export async function runDailyMaintenance(db: Db, now: Date): Promise<Maintenanc
   const { sunday, localDate } = isStoreSunday(now, timezone);
   if (!sunday) return { purged, weekly: false };
   const stockVerify = await weeklyStockVerify(db, localDate);
-  const backup = await weeklyBackup(db, localDate);
+  const backup = await weeklyBackup(db, localDate, now);
   return { purged, weekly: true, stockVerify, backup };
 }

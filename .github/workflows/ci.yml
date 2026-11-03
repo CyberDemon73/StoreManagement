@@ -46,6 +46,10 @@ jobs:
       - name: Migrations consistent with schema
         run: pnpm exec drizzle-kit check
 
+      # A schema edit without its generated migration would ship a drifted database.
+      - name: Schema drift (generated migrations committed)
+        run: pnpm db:generate && git diff --exit-code drizzle/
+
       - name: Dependency audit
         run: pnpm audit --audit-level=high
 
@@ -69,6 +73,8 @@ jobs:
           --health-retries 10
     env:
       DATABASE_URL_TEST: postgres://postgres:postgres@localhost:5432/avenue_test
+      # The race test fails (instead of skipping) if DATABASE_URL_TEST is missing.
+      CI_REQUIRE_PG: '1'
     steps:
       - uses: actions/checkout@v4
 
@@ -80,6 +86,13 @@ jobs:
           cache: pnpm
 
       - run: pnpm install --frozen-lockfile
+
+      - name: Require a test database
+        run: |
+          if [ -z "$DATABASE_URL_TEST" ]; then
+            echo "::error::DATABASE_URL_TEST is empty; the race tests would be skipped"
+            exit 1
+          fi
 
       - name: Oversell / deadlock race tests
         run: pnpm exec vitest run tests/concurrency

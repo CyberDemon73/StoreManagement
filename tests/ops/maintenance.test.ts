@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '@/db/client';
 import { failedLogins, idempotencyKeys, notifications, passwordResetTokens, sessions, users, variants } from '@/db/schema';
 import { resetEnvForTests } from '@/lib/env';
-import { isStoreSunday, purgeStale, runDailyMaintenance, setBackupWriterForTests } from '@/services/maintenance';
+import { BACKUP_RETENTION_MS, isStoreSunday, purgeStale, runDailyMaintenance, setBackupStoreForTests } from '@/services/maintenance';
 import { ensureSettings } from '@/services/settings';
 import { stockFixture } from '../helpers/stock';
 import { createUser } from '../helpers/users';
@@ -20,9 +20,10 @@ const ago = (ms: number) => new Date(NOW.getTime() - ms);
 
 beforeEach(() => {
   process.env.BLOB_READ_WRITE_TOKEN = '';
+  process.env.BACKUP_BLOB_READ_WRITE_TOKEN = '';
   resetEnvForTests();
 });
-afterEach(() => setBackupWriterForTests(null));
+afterEach(() => setBackupStoreForTests(null));
 
 async function ids<T extends { id: string }>(rows: Promise<T[]>) {
   return (await rows).map((r) => r.id).sort();
@@ -164,8 +165,10 @@ describe('runDailyMaintenance weekly work', () => {
   it('not Sunday → no verify and no backup', async () => {
     const { db, admin1 } = await corrupt();
     const writes: string[] = [];
-    setBackupWriterForTests(async (path) => {
-      writes.push(path);
+    setBackupStoreForTests({
+      write: async (path) => {
+        writes.push(path);
+      },
     });
     const out = await runDailyMaintenance(db, SATURDAY);
     expect(out.weekly).toBe(false);
@@ -179,11 +182,13 @@ describe('runDailyMaintenance weekly work', () => {
     const db = getDb();
     const admin = await createUser(db, { role: 'ADMIN' });
     const writes: { path: string; body: Uint8Array }[] = [];
-    setBackupWriterForTests(async (path, body) => {
-      writes.push({ path, body });
+    setBackupStoreForTests({
+      write: async (path, body) => {
+        writes.push({ path, body });
+      },
     });
     const out = await runDailyMaintenance(db, SUNDAY);
-    expect(out.backup).toEqual({ status: 'uploaded', path: 'backups/2026-11-08.zip' });
+    expect(out.backup).toEqual({ status: 'uploaded', path: 'backups/2026-11-08.zip', pruned: 0 });
     expect(writes).toHaveLength(1);
     expect(writes[0]!.path).toBe('backups/2026-11-08.zip');
     const files = unzipSync(writes[0]!.body);
@@ -195,14 +200,16 @@ describe('runDailyMaintenance weekly work', () => {
     const db = getDb();
     await createUser(db, { role: 'ADMIN' });
     const out = await runDailyMaintenance(db, SUNDAY);
-    expect(out.backup).toEqual({ status: 'skipped', reason: 'BLOB_READ_WRITE_TOKEN not set' });
+    expect(out.backup).toEqual({ status: 'skipped', reason: 'BACKUP_BLOB_READ_WRITE_TOKEN / BLOB_READ_WRITE_TOKEN not set' });
   });
 
   it('a failing backup upload does not fail the run; admins get one SYSTEM alert', async () => {
     const db = getDb();
     const admin = await createUser(db, { role: 'ADMIN' });
-    setBackupWriterForTests(async () => {
-      throw new Error('private access not enabled for this store');
+    setBackupStoreForTests({
+      write: async () => {
+        throw new Error('private access not enabled for this store');
+      },
     });
     const out = await runDailyMaintenance(db, SUNDAY);
     expect(out.backup).toEqual({ status: 'failed' });
@@ -210,5 +217,97 @@ describe('runDailyMaintenance weekly work', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.dedupeKey).toBe('backup-failed:2026-11-08');
     expect(rows[0]!.body).not.toContain('private access');
+    expect(rows[0]!.body).toContain('check that the backup Blob store is private');
+  });
+
+  it('uses BACKUP_BLOB_READ_WRITE_TOKEN when set, passed explicitly to upload and prune', async () => {
+    const db = getDb();
+    await createUser(db, { role: 'ADMIN' });
+    process.env.BLOB_READ_WRITE_TOKEN = 'images-store-token';
+    process.env.BACKUP_BLOB_READ_WRITE_TOKEN = 'private-backup-store-token';
+    resetEnvForTests();
+    const tokens: (string | undefined)[] = [];
+    setBackupStoreForTests({
+      write: async (_p, _b, opts) => {
+        tokens.push(opts.token);
+      },
+      list: async (opts) => {
+        tokens.push(opts.token);
+        return [];
+      },
+    });
+    await runDailyMaintenance(db, SUNDAY);
+    expect(tokens).toEqual(['private-backup-store-token', 'private-backup-store-token']);
+  });
+
+  it('falls back to BLOB_READ_WRITE_TOKEN when no backup-specific token is set', async () => {
+    const db = getDb();
+    await createUser(db, { role: 'ADMIN' });
+    process.env.BLOB_READ_WRITE_TOKEN = 'images-store-token';
+    resetEnvForTests();
+    const tokens: (string | undefined)[] = [];
+    setBackupStoreForTests({
+      write: async (_p, _b, opts) => {
+        tokens.push(opts.token);
+      },
+    });
+    const out = await runDailyMaintenance(db, SUNDAY);
+    expect(out.backup?.status).toBe('uploaded');
+    expect(tokens).toEqual(['images-store-token']);
+  });
+
+  it('after a successful upload, backups older than 12 weeks are pruned; newer ones are kept', async () => {
+    const db = getDb();
+    await createUser(db, { role: 'ADMIN' });
+    const at = (ms: number) => new Date(SUNDAY.getTime() - ms);
+    const blob = (pathname: string, uploadedAt: Date) => ({ pathname, url: `https://blob.example/${pathname}`, uploadedAt });
+    const listed = [
+      blob('backups/2026-08-09.zip', at(BACKUP_RETENTION_MS + DAY)),
+      blob('backups/2026-08-16.zip', at(BACKUP_RETENTION_MS + MIN)),
+      blob('backups/2026-08-23.zip', at(BACKUP_RETENTION_MS - MIN)),
+      blob('backups/2026-11-01.zip', at(7 * DAY)),
+    ];
+    const prefixes: string[] = [];
+    const deleted: string[][] = [];
+    setBackupStoreForTests({
+      write: async () => undefined,
+      list: async (opts) => {
+        prefixes.push(opts.prefix);
+        return listed;
+      },
+      del: async (urls) => {
+        deleted.push(urls);
+      },
+    });
+    const out = await runDailyMaintenance(db, SUNDAY);
+    expect(BACKUP_RETENTION_MS).toBe(12 * 7 * DAY);
+    expect(prefixes).toEqual(['backups/']);
+    expect(deleted).toEqual([['https://blob.example/backups/2026-08-09.zip', 'https://blob.example/backups/2026-08-16.zip']]);
+    expect(out.backup).toEqual({ status: 'uploaded', path: 'backups/2026-11-08.zip', pruned: 2 });
+  });
+
+  it('no pruning when the upload fails; a failing prune does not fail the backup', async () => {
+    const db = getDb();
+    await createUser(db, { role: 'ADMIN' });
+    let listed = 0;
+    setBackupStoreForTests({
+      write: async () => {
+        throw new Error('boom');
+      },
+      list: async () => {
+        listed++;
+        return [];
+      },
+    });
+    expect((await runDailyMaintenance(db, SUNDAY)).backup).toEqual({ status: 'failed' });
+    expect(listed).toBe(0);
+
+    setBackupStoreForTests({
+      write: async () => undefined,
+      list: async () => {
+        throw new Error('list failed');
+      },
+    });
+    expect((await runDailyMaintenance(db, SUNDAY)).backup).toEqual({ status: 'uploaded', path: 'backups/2026-11-08.zip', pruned: 0 });
   });
 });

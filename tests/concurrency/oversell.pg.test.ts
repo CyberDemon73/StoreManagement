@@ -19,6 +19,13 @@ import { createUser, sessionCookieFor } from '../helpers/users';
  */
 const url = process.env.DATABASE_URL_TEST;
 
+// CI sets CI_REQUIRE_PG=1 so a missing database fails the job instead of silently skipping.
+describe.runIf(process.env.CI_REQUIRE_PG === '1')('real-Postgres requirement', () => {
+  it('DATABASE_URL_TEST is set when CI_REQUIRE_PG=1', () => {
+    expect(url, 'CI_REQUIRE_PG=1 but DATABASE_URL_TEST is empty: the race tests would be skipped').toBeTruthy();
+  });
+});
+
 describe.skipIf(!url)('concurrency on real Postgres', () => {
   let pool: Pool;
   let db: Db;
