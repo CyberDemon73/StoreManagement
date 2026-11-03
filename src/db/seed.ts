@@ -114,6 +114,16 @@ const PALETTE: { name: string; hex: string }[] = [
   { name: 'Charcoal', hex: '#3C3F44' },
 ];
 
+/** EAN-13: append the standard check digit (weights 1,3,1,3,… from the left) to a 12-digit base. */
+function ean13(base12: string): string {
+  if (!/^\d{12}$/.test(base12)) throw new Error(`ean13 needs 12 digits, got ${base12}`);
+  const sum = [...base12].reduce((acc, d, i) => acc + Number(d) * (i % 2 === 0 ? 1 : 3), 0);
+  return base12 + String((10 - (sum % 10)) % 10);
+}
+
+/** GS1 prefix for Egypt. */
+const BARCODE_PREFIX = '622';
+
 /** Products and variants are inserted in chunks to keep each statement a reasonable size. */
 const BATCH = 100;
 
@@ -211,9 +221,15 @@ export async function seed(db: Db = getDb(), opts: SeedOptions = {}): Promise<Se
       productIds.push(...rows.map((r) => r.id));
     }
 
-    const variantPlan = planned.flatMap((p, i) =>
-      p.vars.map(({ openingQty, ...v }) => ({ values: { ...v, productId: productIds[i]! }, openingQty, cost: p.cost })),
-    );
+    // Explicit, strictly increasing timestamps in matrix order so createdAt ordering (sizes/colours) is deterministic.
+    const baseTime = Date.now();
+    const variantPlan = planned
+      .flatMap((p, i) => p.vars.map((v) => ({ v, productId: productIds[i]!, cost: p.cost })))
+      .map(({ v: { openingQty, ...v }, productId, cost }, n) => {
+        const at = new Date(baseTime + n);
+        const barcode = ean13(BARCODE_PREFIX + String(n + 1).padStart(9, '0'));
+        return { values: { ...v, productId, barcode, createdAt: at, updatedAt: at }, openingQty, cost };
+      });
     for (let i = 0; i < variantPlan.length; i += BATCH) {
       const chunk = variantPlan.slice(i, i + BATCH);
       const rows = await tx

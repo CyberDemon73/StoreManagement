@@ -1,11 +1,15 @@
-import sharp from 'sharp';
+import sharp, { type Metadata } from 'sharp';
 import type { Db } from '@/db/client';
 import { audit } from '@/lib/audit';
 import type { AuthUser, ReqCtx } from '@/lib/auth';
 import { putBlob } from '@/lib/blob';
 import { AppError } from '@/lib/errors';
 
-export const MAX_UPLOAD_BYTES = 5_242_880;
+/** 4 MB: Vercel caps request bodies at 4.5 MB, so leave room for multipart overhead. */
+export const MAX_UPLOAD_BYTES = 4 * 1024 * 1024;
+/** Reject decompression bombs before decoding pixels. */
+const MAX_PIXELS = 25_000_000;
+const MAX_DIMENSION = 2000;
 
 export interface UploadFile {
   bytes: Buffer;
@@ -24,19 +28,25 @@ function isAllowedFormat(f: string | undefined): f is ImageFormat {
 }
 
 async function detectFormat(bytes: Buffer): Promise<ImageFormat> {
-  let format: string | undefined;
+  let meta: Metadata | undefined;
   try {
-    format = (await sharp(bytes).metadata()).format;
+    meta = await sharp(bytes).metadata();
   } catch {
-    format = undefined;
+    meta = undefined;
   }
-  if (!isAllowedFormat(format)) throw new AppError('VALIDATION', 'Unsupported image');
+  const format = meta?.format;
+  if (!meta || !isAllowedFormat(format)) throw new AppError('VALIDATION', 'Unsupported image');
+  if ((meta.width ?? 0) * (meta.height ?? 0) > MAX_PIXELS) {
+    throw new AppError('VALIDATION', 'Image too large (max 25 megapixels)');
+  }
   return format;
 }
 
-/** Re-encode (auto-orient, drop EXIF/ICC/XMP) in the same format. */
+/** Re-encode (auto-orient, fit within 2000px, drop EXIF/ICC/XMP) in the same format. */
 async function reencode(bytes: Buffer, format: ImageFormat): Promise<Buffer> {
-  const img = sharp(bytes).rotate();
+  const img = sharp(bytes)
+    .rotate()
+    .resize({ width: MAX_DIMENSION, height: MAX_DIMENSION, fit: 'inside', withoutEnlargement: true });
   try {
     if (format === 'jpeg') return await img.jpeg({ quality: 85 }).toBuffer();
     if (format === 'png') return await img.png().toBuffer();
@@ -48,7 +58,7 @@ async function reencode(bytes: Buffer, format: ImageFormat): Promise<Buffer> {
 
 export async function storeImage(db: Db, user: AuthUser, file: UploadFile, ctx: ReqCtx): Promise<{ url: string }> {
   if (file.size > MAX_UPLOAD_BYTES || file.bytes.length > MAX_UPLOAD_BYTES) {
-    throw new AppError('VALIDATION', 'File too large (max 5 MB)', { status: 413 });
+    throw new AppError('VALIDATION', 'File too large (max 4 MB)', { status: 413 });
   }
   const format = await detectFormat(file.bytes);
   const encoded = await reencode(file.bytes, format);

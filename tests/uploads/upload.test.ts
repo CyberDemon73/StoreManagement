@@ -100,11 +100,52 @@ describe('POST /uploads', () => {
     expect(captured).toHaveLength(0);
   });
 
-  it('rejects a file over 5 MB with 413 and stores nothing', async () => {
+  it('rejects a file over 4 MB with 413 and stores nothing', async () => {
     const big = Buffer.alloc(6 * 1024 * 1024, 1);
     const res = await call(POST, { method: 'POST', path: '/api/v1/uploads', form: formWith(big, 'big.png', 'image/png'), cookie: await managerCookie() });
     expect(res.status).toBe(413);
-    expect((await res.json()).error.code).toBe('VALIDATION');
+    const body = await res.json();
+    expect(body.error.code).toBe('VALIDATION');
+    expect(body.error.message).toBe('File too large (max 4 MB)');
+    expect(captured).toHaveLength(0);
+  });
+
+  it('rejects a 4.5 MB file with 413', async () => {
+    const big = Buffer.alloc(4.5 * 1024 * 1024, 1);
+    const res = await call(POST, { method: 'POST', path: '/api/v1/uploads', form: formWith(big, 'big.png', 'image/png'), cookie: await managerCookie() });
+    expect(res.status).toBe(413);
+    expect((await res.json()).error.message).toBe('File too large (max 4 MB)');
+    expect(captured).toHaveLength(0);
+  });
+
+  it('rejects by content-length header before reading the body', async () => {
+    const res = await call(POST, {
+      method: 'POST',
+      path: '/api/v1/uploads',
+      form: formWith(await redPng(), 'a.png', 'image/png'),
+      headers: { 'content-length': '6000000' },
+      cookie: await managerCookie(),
+    });
+    expect(res.status).toBe(413);
+    expect((await res.json()).error.message).toBe('File too large (max 4 MB)');
+    expect(captured).toHaveLength(0);
+  });
+
+  it('downscales wide images to fit within 2000px', async () => {
+    const input = await sharp({ create: { width: 3000, height: 100, channels: 3, background: '#0000ff' } }).png().toBuffer();
+    const res = await call(POST, { method: 'POST', path: '/api/v1/uploads', form: formWith(input, 'w.png', 'image/png'), cookie: await managerCookie() });
+    expect(res.status).toBe(201);
+    const meta = await sharp(captured[0]!.body).metadata();
+    expect(meta.width).toBe(2000);
+  });
+
+  it('rejects images over 25 megapixels with 400', async () => {
+    const input = await sharp({ create: { width: 6000, height: 5000, channels: 3, background: '#ffffff' } }).png().toBuffer();
+    const res = await call(POST, { method: 'POST', path: '/api/v1/uploads', form: formWith(input, 'huge.png', 'image/png'), cookie: await managerCookie() });
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error.code).toBe('VALIDATION');
+    expect(body.error.message).toBe('Image too large (max 25 megapixels)');
     expect(captured).toHaveLength(0);
   });
 

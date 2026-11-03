@@ -1,12 +1,18 @@
 import { UNAUTHENTICATED_MESSAGE, withAuth } from '@/lib/auth';
 import { AppError } from '@/lib/errors';
 import { json } from '@/lib/http';
-import { storeImage } from '@/services/uploads';
+import { MAX_UPLOAD_BYTES, storeImage } from '@/services/uploads';
+
+/** Allowance for multipart boundaries and part headers on top of the file itself. */
+const MULTIPART_OVERHEAD = 64 * 1024;
 
 export const runtime = 'nodejs';
 
 export const POST = withAuth({ permission: 'products.write' }, async (req, { db, user, req: ctx }) => {
   if (!user) throw new AppError('UNAUTHENTICATED', UNAUTHENTICATED_MESSAGE);
+  if (Number(req.headers.get('content-length') ?? 0) > MAX_UPLOAD_BYTES + MULTIPART_OVERHEAD) {
+    throw new AppError('VALIDATION', 'File too large (max 4 MB)', { status: 413 });
+  }
   let form: FormData;
   try {
     form = await req.formData();

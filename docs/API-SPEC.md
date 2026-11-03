@@ -38,7 +38,7 @@ Conventions
 | GET/POST/PATCH | /brands, /brands/:id | catalog.read / catalog.write | `{ name, logoUrl?, isActive? }`; GET includes `productCount` |
 | GET/POST/PATCH | /categories, /categories/:id | catalog.read / catalog.write | `{ name, parentId? }` |
 | GET/POST/PATCH | /suppliers, /suppliers/:id | catalog.read / catalog.write | |
-| POST | /uploads | products.write | multipart image ≤ 5 MB → `{ url }` |
+| POST | /uploads | products.write | multipart image ≤ 4 MB (Vercel request bodies are capped at 4.5 MB) → `{ url }` |
 | POST | /products/import | export.csv | multipart CSV, `?dryRun=1` → `{ rows, errors[] }` |
 | GET | /products/export | export.csv | CSV stream |
 
