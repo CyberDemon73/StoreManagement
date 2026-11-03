@@ -33,6 +33,10 @@ export function isLive(path: string): boolean {
 }
 const BASE = '/api/v1';
 
+export interface ImportRowError { row: number; message: string; data: Record<string, string> }
+export interface ImportPreview { rows: number; ok: number; errors: ImportRowError[] }
+export interface ImportCommit extends ImportPreview { created: { products: number; variants: number } }
+
 export class ApiError extends Error {
   constructor(public code: ApiErrorCode, message: string, public status: number, public fields?: Record<string, string>, public retryAfter?: number) {
     super(message);
@@ -327,11 +331,25 @@ export const api = {
       void lockoutEnabled; void passwordRotationDays; void nextSaleNumber;
       return call<Settings>(() => store.updateSettings(patch, ctx.userId), 'PATCH', '/settings', body);
     },
-    /** POST /products/import?dryRun=1 (multipart `file`) → preview with row errors. */
-    importPreview: (file: File): Promise<{ rows: number; ok: number; errors: { row: number; message: string; data: Record<string, string> }[] }> => {
+    /**
+     * POST /products/import?dryRun=1 (multipart `file`) → 200 preview with row errors.
+     * File-level problems (> 2 MB, > 5,000 rows, missing columns, not text) → 400 with
+     * `fields.file`. Row 2 is the first data row in the error coordinates.
+     */
+    importPreview: (file: File): Promise<ImportPreview> => {
       if (!isLive('/products')) return mock(() => ({ rows: 40, ok: 38, errors: [{ row: 7, message: 'Unknown brand', data: { name: 'Chino Slim', brand: 'Northlne', size: '32', color: 'Sand', price: '1090.00', qty: '4' } }, { row: 23, message: 'Price not a number', data: { name: 'Canvas Low Sneaker', brand: 'Casa Lino', size: '42', color: 'White', price: 'abc', qty: '6' } }] }));
       const form = new FormData(); form.append('file', file);
-      return requestMultipart<{ rows: number; ok: number; errors: { row: number; message: string; data: Record<string, string> }[] }>('/products/import?dryRun=1', form);
+      return requestMultipart<ImportPreview>('/products/import?dryRun=1', form);
+    },
+    /**
+     * POST /products/import (multipart `file`) → 201 commit. The server runs the whole file in
+     * a transaction: 400 means nothing was written (and the body carries the same row errors
+     * so the UI can show them without a second preview call).
+     */
+    importCommit: (file: File): Promise<ImportCommit> => {
+      if (!isLive('/products')) return mock(() => ({ rows: 40, ok: 40, errors: [], created: { products: 40, variants: 0 } }));
+      const form = new FormData(); form.append('file', file);
+      return requestMultipart<ImportCommit>('/products/import', form);
     },
   },
 

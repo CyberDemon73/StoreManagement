@@ -12,8 +12,12 @@ import { useToast } from '@/components/ui/Toast';
 import { csvDataUrl, downloadUrl } from '@/screens/analytics/tabs/shared';
 
 type Preview = Awaited<ReturnType<typeof api.settings.importPreview>>;
-const COLS = ['name', 'brand', 'size', 'color', 'price', 'qty'] as const;
-const TEMPLATE = [[...COLS], ['Linen Shirt Relaxed', 'Northline', 'M', 'Black', '890.00', '12'], ['Chino Slim', 'Northline', '32', 'Sand', '1090.00', '4']];
+const COLS = ['name', 'brand', 'category', 'size', 'color', 'colorHex', 'price', 'cost', 'qty', 'barcode'] as const;
+const TEMPLATE = [
+  [...COLS],
+  ['Linen Shirt Relaxed', 'Northline', 'Shirts', 'M', 'Black', '#1F2421', '890.00', '420.00', '12', ''],
+  ['Chino Slim', 'Northline', 'Trousers', '32', 'Sand', '#C8B89A', '1090.00', '510.00', '4', ''],
+];
 
 export function DataSection() {
   const auth = useAuth();
@@ -41,12 +45,20 @@ export function DataSection() {
   };
 
   const doImport = async () => {
-    if (!preview) return;
+    if (!file) return;
     setImporting(true);
-    // The real import is the same POST without dryRun; the mock has no write path, so we only report.
-    await new Promise((r) => setTimeout(r, 400));
-    toast({ kind: 'success', title: `${preview.ok} rows imported`, body: preview.errors.length ? `${preview.errors.length} rows skipped.` : undefined });
-    setImporting(false); setPreview(null); setFile(null);
+    try {
+      const result = await api.settings.importCommit(file);
+      toast({ kind: 'success', title: `${result.created.products} products imported`, body: result.errors.length ? `${result.errors.length} rows skipped.` : `${result.created.variants} variants created.` });
+      setPreview(null); setFile(null);
+    } catch (e) {
+      // 400 means nothing was written; the server returns the same {rows, ok, errors} shape so the user can fix and retry.
+      if (e instanceof ApiError && 'rows' in (e as unknown as Record<string, unknown>)) {
+        toast({ kind: 'error', title: 'Nothing was imported', body: `${e.message}. The whole file was rejected.` });
+      } else {
+        toast({ kind: 'error', title: 'Nothing was imported', body: (e as Error).message });
+      }
+    } finally { setImporting(false); }
   };
 
   return (
