@@ -23,13 +23,13 @@ export async function sendEmail(mail: OutgoingEmail): Promise<void> {
   if (testTransport) return testTransport(mail);
   const { RESEND_API_KEY, EMAIL_FROM } = getEnv();
   if (!RESEND_API_KEY) {
-    logger.info({ to: mail.to, subject: mail.subject }, 'email not sent: RESEND_API_KEY unset');
+    logger.info({ subject: mail.subject }, 'email not sent: RESEND_API_KEY unset');
     return;
   }
   resend ??= new Resend(RESEND_API_KEY);
   const { error } = await resend.emails.send({ from: EMAIL_FROM, to: mail.to, subject: mail.subject, text: mail.text });
   if (error) {
-    logger.error({ to: mail.to, subject: mail.subject, error: error.message }, 'email send failed');
+    logger.error({ subject: mail.subject, error: error.message }, 'email send failed');
     throw new Error('email send failed');
   }
 }

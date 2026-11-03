@@ -18,7 +18,8 @@ Conventions
 | POST | /auth/forgot | public (rate limited) | `{ email }` | 204 always |
 | POST | /auth/reset | public | `{ token, password }` | 204 |
 | PATCH | /me | auth | `{ name }` | `{ user }` |
-| POST | /me/password | auth | `{ current, next }` | 204 (revokes other sessions) |
+| POST | /me/password | auth | `{ current, next }` — throttled 5 / 15 min per user | 204 + new session cookie (revokes every other session and outstanding reset links; clears `mustChangePassword`) |
+| POST | /auth/accept-invite | public (IP-limited) | `{ token, password }` — invite token 48 h, single use | 200 `{ user }` + session cookie; 400 invalid/expired/used |
 | GET | /health | public | — | `{ ok, db }` |
 
 ## Catalog
@@ -89,15 +90,17 @@ Conventions
 ## Users, settings, audit, notifications
 | Method | Path | Perm | Notes |
 |---|---|---|---|
-| GET | /users | users.manage | |
-| POST | /users | users.manage | `{ name, email, role, password? }` — without password sends invite |
-| PATCH | /users/:id | users.manage | `{ name?, role? }` last-admin guard |
-| POST | /users/:id/disable, /enable | users.manage | last-admin guard |
-| POST | /users/:id/reset-password | users.manage | `{ mode: 'EMAIL'|'TEMP' }` |
-| POST | /users/:id/revoke-sessions | users.manage | |
-| GET | /settings | auth (public subset) / settings.write (full) | |
-| PATCH | /settings | settings.write | partial, validated |
-| GET | /audit | audit.read | `page, pageSize` today (Sprint 0); `q, userId, entity, action, from, to` arrive in Sprint 5 |
-| GET | /notifications | auth | unread first |
-| POST | /notifications/:id/read | auth | and `/notifications/read-all` |
+| GET | /users | users.manage | `User[]` with `roles`, `sessions` (active count), `lastLoginAt` |
+| POST | /users | users.manage | `{ name, email, role, mode: 'INVITE'|'TEMP' }` → 201 `{ user, temporaryPassword? }`. INVITE emails a 48 h link (status INVITED); TEMP returns a 16-char password once and sets `mustChangePassword`. Only an ADMIN may create an ADMIN. Duplicate email → 409 `fields.email` |
+| PATCH | /users/:id | users.manage | `{ name?, role? }` non-empty; to/from ADMIN or on an ADMIN account: ADMIN only (403); last active ADMIN / own role → 409; role change revokes sessions and reset links |
+| POST | /users/:id/disable, /enable | users.manage | disable: not self, not last ADMIN (409); revokes sessions and reset links. enable restores INVITED for never-accepted invites |
+| POST | /users/:id/reset-password | users.manage | `{ mode: 'EMAIL'|'TEMP' }` → `{ temporaryPassword? }`. Kills old reset links and sessions; emails the target and notifies every ADMIN (`ACCOUNT_RESET`). EMAIL on an INVITED user re-sends the invite; TEMP on INVITED → 409 |
+| POST | /users/:id/revoke-sessions | users.manage | 204 |
+| GET | /settings | auth | `settings.read.full` → full `Settings` incl. `nextSaleNumber`; others → public subset |
+| PATCH | /settings | settings.write | strict partial: `timezone` (pg_timezone_names), `currency` /^[A-Z]{3}$/, `saleNumberPrefix` /^[A-Z]{1,6}$/ not PO/SC, `sellerDiscountCapPct` 0–100, `lowStockDefault` 0–1000, `largeRefundAlert` ≥ 1, `sessionIdleHours` 1–72 (≤ absolute days × 24), `sessionAbsoluteDays` 1–30, text ≤ 500 (blank clears), `logoUrl` https, presets, `dateFormat`, `requirePhoneOnTransfer`, `receiptShowLogo`. Unknown keys (`lockoutEnabled`, `passwordRotationDays`, `nextSaleNumber`) → 400. Audits changed keys only |
+| GET | /audit | audit.read | `page, pageSize, q, userId, entity, action, from, to` (store-local days) → paginated `AuditEntry` with `userName`, `entityLabel`, `summary` |
+| GET | /notifications | auth | own only; unread first then newest, max 50. Kinds: LOW_STOCK, LARGE_REFUND, NEW_DEVICE_LOGIN, COUNT_APPLIED, ACCOUNT_RESET |
+| POST | /notifications/:id/read | auth | and `/notifications/read-all`; 204; another user's id → 404 |
+
+A user with `mustChangePassword` gets 403 `FORBIDDEN` `fields.password = 'Password change required'` on every authenticated route except `GET /auth/me`, `POST /auth/logout`, `POST /me/password`. Login of an INVITED user → 403 `Invitation not accepted`.
 | GET | /data/export | export.csv (ADMIN) | zip of CSVs |

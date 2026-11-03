@@ -70,3 +70,12 @@ Format: `YYYY-MM-DD — decision — why — alternatives considered`
 - 2026-11-05 — CSV export: UTF-8 BOM, formula neutralisation after ';' and leading whitespace, permission `export.csv`
 - 2026-11-05 — Week/month trend buckets are labelled by the bucket start (may precede `from`); the frontend labels partial buckets — clamp labels (deferred)
 - 2026-11-05 — Sprint 5 PATCH /settings must validate `timezone` against Postgres `pg_timezone_names` (not only Intl): an invalid zone 500s every report and the sales/movements lists
+- 2026-11-06 — Only an ADMIN may create an ADMIN, change a role to/from ADMIN, or modify/disable/reset an ADMIN account; the last active ADMIN cannot be disabled or demoted (advisory lock `avenue:admins`); nobody disables or re-roles themselves — ADMIN ≈ MANAGER in the matrix, so this is what stops a manager self-promoting
+- 2026-11-06 — Invites reuse `password_reset_tokens` (purpose INVITE, 48 h); invited users are status INVITED with an unusable random hash, and login answers 403 `Invitation not accepted` — separate invites table (rejected: same shape)
+- 2026-11-06 — Temporary passwords: 16 chars from an unambiguous alphabet, returned once, `mustChangePassword` forces `POST /me/password` before any business route
+- 2026-11-06 — Reset links die with the account state: disable, admin reset, role change and password change invalidate outstanding RESET tokens, and `reset` requires status ACTIVE — review showed a disabled ex-employee could re-enter with an earlier link
+- 2026-11-06 — Peer password resets are visible: the target is emailed and every active ADMIN gets an `ACCOUNT_RESET` notification; a MANAGER may still TEMP-reset a MANAGER or SELLER (product call: managers cover each other on shift; revisit if the store wants ADMIN-only) — silent reset (rejected after review)
+- 2026-11-06 — `POST /me/password` throttled 5 per 15 min per user — a stolen session must not brute-force the current password
+- 2026-11-06 — `sessionAbsoluteDays` max 30 (SECURITY.md); lowering it applies to new sessions only — shortening live sessions deferred to the Sprint 6 purge cron
+- 2026-11-06 — Notifications are per user with a partial unique (userId, dedupeKey) where unread; LOW_STOCK fires only when an operation lowers a variant to/below its threshold; new-device alerts name the browser, not the raw user agent; retention purge is a Sprint 6 cron
+- 2026-11-06 — Email logs never include the recipient address (PII); they log the subject only
