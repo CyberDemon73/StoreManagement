@@ -37,9 +37,10 @@ export async function createAdjustments(db: Db, user: AuthUser, input: Adjustmen
       created.push(result.movementId);
       booked.push({ variantId: item.variantId, qtyDelta: delta, reason: item.reason });
     }
+    // Only decreases alert: restocking a still-low variant must not re-raise a read alert.
     await notifyLowStock(
       tx,
-      booked.map((b) => b.variantId),
+      booked.filter((b) => b.qtyDelta < 0).map((b) => b.variantId),
     );
     if (created.length > 0) await audit(tx, actorOf(user, ctx), 'stock.adjust', 'variant', null, null, { items: booked });
     return created;

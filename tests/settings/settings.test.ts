@@ -121,12 +121,12 @@ describe('PATCH /settings', () => {
       receiptFooter: 'Bye',
       receiptShowLogo: false,
       sessionIdleHours: 72,
-      sessionAbsoluteDays: 90,
-      largeRefundAlert: 0,
+      sessionAbsoluteDays: 30,
+      largeRefundAlert: 1,
       colorPresets: [{ name: 'Black', hex: '#000000' }],
     });
     expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ saleNumberPrefix: 'AVE', dateFormat: 'YYYY-MM-DD', receiptShowLogo: false, largeRefundAlert: 0 });
+    expect(await res.json()).toMatchObject({ saleNumberPrefix: 'AVE', dateFormat: 'YYYY-MM-DD', receiptShowLogo: false, largeRefundAlert: 1 });
   });
 
   it.each([
@@ -141,7 +141,9 @@ describe('PATCH /settings', () => {
     ['lowercase currency', { currency: 'egp' }, 'currency'],
     ['http logo', { logoUrl: 'http://example.com/x.png' }, 'logoUrl'],
     ['idle hours 0', { sessionIdleHours: 0 }, 'sessionIdleHours'],
-    ['absolute days 91', { sessionAbsoluteDays: 91 }, 'sessionAbsoluteDays'],
+    ['absolute days 31', { sessionAbsoluteDays: 31 }, 'sessionAbsoluteDays'],
+    ['refund alert 0', { largeRefundAlert: 0 }, 'largeRefundAlert'],
+    ['idle hours above absolute window', { sessionIdleHours: 25, sessionAbsoluteDays: 1 }, 'sessionIdleHours'],
     ['low stock 1001', { lowStockDefault: 1001 }, 'lowStockDefault'],
     ['bad date format', { dateFormat: 'MM/DD/YYYY' }, 'dateFormat'],
     ['bad colour', { colorPresets: [{ name: 'X', hex: 'red' }] }, null],
@@ -155,6 +157,31 @@ describe('PATCH /settings', () => {
     const err = (await res.json()).error;
     expect(err.code).toBe('VALIDATION');
     if (field) expect(err.fields).toHaveProperty(field);
+  });
+
+  it('rejects idle hours that exceed the stored absolute window', async () => {
+    const { cookie } = await managerCookie();
+    expect((await patch(cookie, { sessionIdleHours: 12, sessionAbsoluteDays: 1 })).status).toBe(200);
+    const res = await patch(cookie, { sessionIdleHours: 30 });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields).toHaveProperty('sessionIdleHours');
+  });
+
+  it('rejects an absolute window shorter than the stored idle hours', async () => {
+    const { cookie } = await managerCookie();
+    expect((await patch(cookie, { sessionIdleHours: 30 })).status).toBe(200);
+    const res = await patch(cookie, { sessionAbsoluteDays: 1 });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields).toHaveProperty('sessionIdleHours');
+  });
+
+  it('stores blank text fields as cleared', async () => {
+    const { cookie } = await managerCookie();
+    await patch(cookie, { receiptHeader: 'Hi', phone: '123', address: 'A', receiptFooter: 'F', logoUrl: 'https://x.example/l.png' });
+    const res = await patch(cookie, { receiptHeader: '   ', phone: '', address: ' ', receiptFooter: '', logoUrl: '  ' });
+    expect(res.status).toBe(200);
+    const body = await (await call(GET, { path: '/api/v1/settings', cookie })).json();
+    for (const k of ['receiptHeader', 'phone', 'address', 'receiptFooter', 'logoUrl']) expect(body).not.toHaveProperty(k);
   });
 
   it('rejects an empty body', async () => {

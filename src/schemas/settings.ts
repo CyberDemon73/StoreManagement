@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { colorRef, money } from './products';
 
-const text500 = z.string().trim().max(500).nullable();
+/** Blank (after trim) clears the field, so the UI can send an emptied input as-is. */
+const blankToNull = (v: string) => (v === '' ? null : v);
+const text500 = z.string().trim().max(500).transform(blankToNull).nullable();
 
 /** Two decimal places at most; tolerant of binary float noise (12.34 * 100 = 1233.9999…). */
 const twoDp = (n: number) => Math.abs(n * 100 - Math.round(n * 100)) < 1e-9;
@@ -25,8 +27,9 @@ export const settingsPatchBody = z
       .string()
       .trim()
       .max(500)
-      .url()
-      .refine((u) => u.startsWith('https://'), 'Logo URL must use https')
+      .refine((u) => u === '' || URL.canParse(u), 'Invalid url')
+      .refine((u) => u === '' || u.startsWith('https://'), 'Logo URL must use https')
+      .transform(blankToNull)
       .nullable(),
     phone: text500,
     address: text500,
@@ -46,8 +49,9 @@ export const settingsPatchBody = z
     receiptFooter: text500,
     receiptShowLogo: z.boolean(),
     sessionIdleHours: z.number().int().min(1).max(72),
-    sessionAbsoluteDays: z.number().int().min(1).max(90),
-    largeRefundAlert: money,
+    // SECURITY.md: sessions end after 30 days at most. Idle ≤ absolute is checked in the service.
+    sessionAbsoluteDays: z.number().int().min(1).max(30),
+    largeRefundAlert: money.min(1),
     sizePresets: z.array(sizePreset).max(20),
     colorPresets: z.array(colorRef).max(60),
   })

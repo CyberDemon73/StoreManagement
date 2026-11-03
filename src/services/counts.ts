@@ -176,7 +176,8 @@ export async function applyCount(db: Db, user: AuthUser, id: string, input: Coun
     const eligible = new Set(eligibleRows.map((r) => r.id));
     const skipped: string[] = [];
     let movements = 0;
-    const moved: string[] = [];
+    // Only decreases alert: a count that raises a still-low variant must not re-raise a read alert.
+    const decreased: string[] = [];
     for (const t of targets) {
       if (!eligible.has(t.variantId)) {
         skipped.push(t.variantId);
@@ -196,9 +197,9 @@ export async function applyCount(db: Db, user: AuthUser, id: string, input: Coun
       });
       live.set(t.variantId, { quantity: result.quantity, costPrice: result.costPrice });
       movements += 1;
-      moved.push(t.variantId);
+      if (delta < 0) decreased.push(t.variantId);
     }
-    await notifyLowStock(tx, moved);
+    await notifyLowStock(tx, decreased);
     await notifyManagers(tx, {
       kind: 'COUNT_APPLIED',
       title: 'Stock count applied',

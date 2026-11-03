@@ -63,6 +63,12 @@ export async function patchSettings(db: Db, actor: AuditActor, input: SettingsPa
     await getSettings(tx);
     await tx.execute(sql`select id from settings where id = 1 for update`);
     const current = await getSettings(tx);
+    // Checked against the merged values so a patch of either key alone cannot invert the pair.
+    const idle = input.sessionIdleHours ?? current.sessionIdleHours;
+    const absoluteDays = input.sessionAbsoluteDays ?? current.sessionAbsoluteDays;
+    if (idle > absoluteDays * 24) {
+      throw new AppError('VALIDATION', 'Invalid input', { fields: { sessionIdleHours: 'Idle timeout cannot exceed the absolute session length' } });
+    }
     const view = { ...toPublicSettings(current), ...toFullSettings(current, 0) } as Record<string, unknown>;
     // Nullable text fields read as undefined from the full view; audit them as null.
     for (const k of ['logoUrl', 'phone', 'address', 'receiptHeader', 'receiptFooter']) view[k] = view[k] ?? null;
