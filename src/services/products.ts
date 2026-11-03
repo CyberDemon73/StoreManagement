@@ -50,49 +50,38 @@ export function mapUniqueViolation(err: unknown): never {
 }
 
 /**
- * Aggregate over a product's ACTIVE variants, as a SQL fragment usable in a lateral join or a
- * standalone select. `p_id` must be the product id expression. All counts cast to int so every
- * driver (PGlite, node-postgres) returns numbers rather than bigint/strings.
+ * Aggregate over ACTIVE variants, shared by the product list (lateral join) and the detail view.
+ * Every count is cast to int so each driver (PGlite, node-postgres) returns numbers, not
+ * bigint/strings. Aliased so the fields can live inside a subquery.
  */
-export function variantAggregateSql(productId: ReturnType<typeof sql>) {
-  return sql`
-    select
-      count(*)::int as variant_count,
-      coalesce(sum(v.quantity), 0)::int as total_qty,
-      count(*) filter (where v.quantity > 0 and v.quantity <= v.low_stock_threshold)::int as low_count,
-      count(*) filter (where v.quantity <= 0)::int as out_count,
-      min(v.sell_price)::int as min_price,
-      max(v.sell_price)::int as max_price,
-      (array_agg(v.color_hex order by v.created_at, v.id))[1] as tint
-    from variants v
-    where v.product_id = ${productId} and v.is_active`;
-}
+export const variantAggregateFields = {
+  variantCount: sql<number>`count(*)::int`.as('variant_count'),
+  totalQty: sql<number>`coalesce(sum(${variants.quantity}), 0)::int`.as('total_qty'),
+  lowCount: sql<number>`count(*) filter (where ${variants.quantity} > 0 and ${variants.quantity} <= ${variants.lowStockThreshold})::int`.as('low_count'),
+  outCount: sql<number>`count(*) filter (where ${variants.quantity} <= 0)::int`.as('out_count'),
+  minPrice: sql<number | null>`min(${variants.sellPrice})::int`.as('min_price'),
+  maxPrice: sql<number | null>`max(${variants.sellPrice})::int`.as('max_price'),
+  tint: sql<string | null>`(array_agg(${variants.colorHex} order by ${variants.createdAt}, ${variants.id}))[1]`.as('tint'),
+};
 
-interface AggregateRow {
-  variant_count: number;
-  total_qty: number;
-  low_count: number;
-  out_count: number;
-  min_price: number | null;
-  max_price: number | null;
-  tint: string | null;
-}
-
-export function toAggregates(row: AggregateRow | undefined): ProductAggregates {
+export function toAggregates(row: Partial<ProductAggregates> | undefined): ProductAggregates {
   return {
-    variantCount: row?.variant_count ?? 0,
-    totalQty: row?.total_qty ?? 0,
-    lowCount: row?.low_count ?? 0,
-    outCount: row?.out_count ?? 0,
-    minPrice: row?.min_price ?? null,
-    maxPrice: row?.max_price ?? null,
+    variantCount: row?.variantCount ?? 0,
+    totalQty: row?.totalQty ?? 0,
+    lowCount: row?.lowCount ?? 0,
+    outCount: row?.outCount ?? 0,
+    minPrice: row?.minPrice ?? null,
+    maxPrice: row?.maxPrice ?? null,
     tint: row?.tint ?? null,
   };
 }
 
 export async function productAggregates(db: Db, productId: string): Promise<ProductAggregates> {
-  const res = (await db.execute(variantAggregateSql(sql`${productId}::uuid`))) as { rows: AggregateRow[] };
-  return toAggregates(res.rows[0]);
+  const [row] = await db
+    .select(variantAggregateFields)
+    .from(variants)
+    .where(and(eq(variants.productId, productId), eq(variants.isActive, true)));
+  return toAggregates(row);
 }
 
 async function loadProduct(db: Db, id: string): Promise<ProductRow> {
