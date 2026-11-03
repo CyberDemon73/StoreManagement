@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 64" width="300" height="64" role="img" aria-label="Avenue Stock">
+  <rect width="64" height="64" rx="16" fill="#3F6B5C"/>
+  <path d="M15 49 L32 15 L49 49" fill="none" stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M22.5 37.5 H54" fill="none" stroke="#FFFFFF" stroke-width="6.5" stroke-linecap="round"/>
+  <circle cx="54" cy="29" r="3.25" fill="#C8B89A"/>
+  <text x="80" y="41" font-family="Inter, 'Segoe UI', system-ui, sans-serif" font-size="30" font-weight="600" letter-spacing="-0.6" fill="#ECEEEB">Avenue<tspan font-weight="400" fill="#AEB5B0"> Stock</tspan></text>
+</svg>

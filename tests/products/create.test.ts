@@ -1,0 +1,165 @@
+import { count, eq } from 'drizzle-orm';
+import { describe, expect, it } from 'vitest';
+import { POST } from '@/app/api/v1/products/route';
+import { getDb } from '@/db/client';
+import { auditLog, products, stockMovements } from '@/db/schema';
+import { seedCatalog } from '../helpers/catalog';
+import { call } from '../helpers/http';
+import { createUser, sessionCookieFor } from '../helpers/users';
+
+async function fixture() {
+  const db = getDb();
+  const cat = await seedCatalog(db);
+  const manager = await createUser(db, { role: 'MANAGER' });
+  const cookie = await sessionCookieFor(db, manager.id);
+  return { db, ...cat, manager, cookie };
+}
+
+const matrix = {
+  sizes: ['S', 'M'],
+  colors: [
+    { name: 'Black', hex: '#000000' },
+    { name: 'Navy Blue', hex: '#1f2a44' },
+  ],
+  initialQty: { 'S|Black': 5 },
+  costPrice: 400,
+};
+
+describe('POST /products barcodes', () => {
+  const create = (cookie: string, brandId: string, categoryId: string, name: string, barcodes: Record<string, string>) =>
+    call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { name, brandId, categoryId, defaultPrice: 1000, variants: { ...matrix, barcodes } } });
+
+  it('stores a scanned barcode on each matching cell', async () => {
+    const { brand, category, cookie } = await fixture();
+    const res = await create(cookie, brand.id, category.id, 'Chino Slim', { 'S|Black': '6221234567890', 'M|Navy Blue': '6221234567891' });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    const bySku = Object.fromEntries(body.variants.map((v: { sku: string; barcode?: string }) => [v.sku, v.barcode]));
+    expect(bySku['NO-CHI-S-BLACK']).toBe('6221234567890');
+    expect(bySku['NO-CHI-M-NAVYBLUE']).toBe('6221234567891');
+    expect(bySku['NO-CHI-S-NAVYBLUE']).toBeUndefined();
+  });
+
+  it('rejects the same barcode on two cells, and a key outside the matrix', async () => {
+    const { brand, category, cookie } = await fixture();
+    const dup = await create(cookie, brand.id, category.id, 'Chino Slim', { 'S|Black': '6221234567890', 'M|Black': '6221234567890' });
+    expect(dup.status).toBe(400);
+    expect((await dup.json()).error.fields.variants).toMatch(/6221234567890/);
+    const stray = await create(cookie, brand.id, category.id, 'Chino Slim', { 'XL|Red': '6221234567892' });
+    expect(stray.status).toBe(400);
+  });
+
+  it('answers 409 fields.barcode when another product already uses the code, writing nothing', async () => {
+    const { db, brand, category, cookie } = await fixture();
+    expect((await create(cookie, brand.id, category.id, 'First', { 'S|Black': '6221234567890' })).status).toBe(201);
+    const res = await create(cookie, brand.id, category.id, 'Second', { 'M|Black': '6221234567890' });
+    expect(res.status).toBe(409);
+    expect((await res.json()).error.fields).toMatchObject({ barcode: 'Barcode already exists' });
+    expect((await db.select({ n: count() }).from(products))[0]!.n).toBe(1);
+  });
+});
+
+describe('POST /products', () => {
+  it('creates a product with a size×color matrix and INITIAL movements only for stocked cells', async () => {
+    const { db, brand, category, cookie } = await fixture();
+    const res = await call(POST, {
+      method: 'POST',
+      path: '/api/v1/products',
+      cookie,
+      body: { name: 'Chino Slim', brandId: brand.id, categoryId: category.id, defaultPrice: 1000, defaultCost: 600, variants: matrix },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.baseSku).toBe('NO-CHI');
+    expect(body.status).toBe('ACTIVE');
+    expect(body.variants).toHaveLength(4);
+    const skus = body.variants.map((v: { sku: string }) => v.sku);
+    expect(skus).toContain('NO-CHI-S-BLACK');
+    expect(skus).toContain('NO-CHI-M-NAVYBLUE');
+    const stocked = body.variants.find((v: { sku: string }) => v.sku === 'NO-CHI-S-BLACK');
+    expect(stocked).toMatchObject({ quantity: 5, costPrice: 400, sellPrice: 1000, color: { name: 'Black', hex: '#000000' } });
+    for (const v of body.variants) if (v.sku !== 'NO-CHI-S-BLACK') expect(v.quantity).toBe(0);
+    const movements = await db.select().from(stockMovements);
+    expect(movements).toHaveLength(1);
+    expect(movements[0]).toMatchObject({ variantId: stocked.id, type: 'INITIAL', qtyDelta: 5, unitCost: 400 });
+    expect(body.tint).toBe('#000000');
+    expect(body.sizes).toEqual(['S', 'M']);
+    expect(body.colors).toHaveLength(2);
+    expect(body).toMatchObject({ variantCount: 4, totalQty: 5, outCount: 3, lowCount: 0, minPrice: 1000, maxPrice: 1000, marginPct: 40 });
+    expect(body.brand).toMatchObject({ id: brand.id, name: 'Northline' });
+    const audits = await db.select().from(auditLog).where(eq(auditLog.action, 'product.create'));
+    expect(audits).toHaveLength(1);
+    expect(audits[0]!.entityId).toBe(body.id);
+  });
+
+  it('uppercases a supplied baseSku and creates no variants when the matrix is omitted', async () => {
+    const { brand, category, cookie } = await fixture();
+    const res = await call(POST, {
+      method: 'POST',
+      path: '/api/v1/products',
+      cookie,
+      body: { name: 'Chino Slim', brandId: brand.id, categoryId: category.id, defaultPrice: 1000, baseSku: 'nl-chi' },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body.baseSku).toBe('NL-CHI');
+    expect(body.variants).toEqual([]);
+    expect(body).toMatchObject({ variantCount: 0, totalQty: 0, minPrice: 1000, maxPrice: 1000, tint: '#E6E3DC' });
+    expect(body.marginPct).toBeUndefined();
+  });
+
+  it('returns 409 fields.baseSku on a duplicate base SKU and inserts nothing', async () => {
+    const { db, brand, category, cookie } = await fixture();
+    const body = { name: 'Chino Slim', brandId: brand.id, categoryId: category.id, defaultPrice: 1000, variants: matrix };
+    expect((await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body })).status).toBe(201);
+    const dup = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { ...body, name: 'Chino Wide', baseSku: 'NO-CHI' } });
+    expect(dup.status).toBe(409);
+    const err = await dup.json();
+    expect(err.error.code).toBe('CONFLICT');
+    expect(err.error.fields.baseSku).toBeDefined();
+    const [row] = await db.select({ n: count() }).from(products);
+    expect(row!.n).toBe(1);
+    expect(await db.select().from(stockMovements)).toHaveLength(1);
+  });
+
+  it('returns 404 for an unknown brand and 400 for an unknown field', async () => {
+    const { category, cookie } = await fixture();
+    const unknown = await call(POST, {
+      method: 'POST',
+      path: '/api/v1/products',
+      cookie,
+      body: { name: 'X', brandId: '00000000-0000-4000-8000-000000000001', categoryId: category.id, defaultPrice: 1 },
+    });
+    expect(unknown.status).toBe(404);
+    const bad = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { name: 'X', defaultPrice: 1, quantity: 3 } });
+    expect(bad.status).toBe(400);
+  });
+
+  it('returns 403 for a SELLER', async () => {
+    const { db, brand, category } = await fixture();
+    const seller = await createUser(db, { role: 'SELLER' });
+    const res = await call(POST, {
+      method: 'POST',
+      path: '/api/v1/products',
+      cookie: await sessionCookieFor(db, seller.id),
+      body: { name: 'X', brandId: brand.id, categoryId: category.id, defaultPrice: 1 },
+    });
+    expect(res.status).toBe(403);
+  });
+});
+
+describe('matrix SKU safety (review fixes)', () => {
+  it('rejects a matrix whose cells collide into the same SKU or produce an empty SKU part, inserting nothing', async () => {
+    const db = getDb();
+    const { brand, category } = await seedCatalog(db);
+    const m = await createUser(db, { role: 'MANAGER' });
+    const cookie = await sessionCookieFor(db, m.id);
+    const base = { name: 'Collide', brandId: brand.id, categoryId: category.id, defaultPrice: 1000 };
+    const collide = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { ...base, variants: { sizes: ['M', 'm'], colors: [{ name: 'Black', hex: '#000000' }] } } });
+    expect(collide.status).toBe(400);
+    expect((await collide.json()).error.fields.variants).toBeTypeOf('string');
+    const empty = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { ...base, variants: { sizes: ['!!!'], colors: [{ name: 'Black', hex: '#000000' }] } } });
+    expect(empty.status).toBe(400);
+    expect(await db.select().from(products)).toHaveLength(0);
+  });
+});

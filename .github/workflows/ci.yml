@@ -1,0 +1,98 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 'sprint-*']
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Lint, typecheck, test, audit, secrets
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Version comes from package.json "packageManager".
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # First, so a leaked secret fails fast and before anything else prints logs.
+      - name: Secrets scan
+        run: pnpm secrets:scan
+
+      - name: Lint
+        run: pnpm lint
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Unit + route tests (PGlite)
+        run: pnpm test
+
+      - name: Migrations consistent with schema
+        run: pnpm exec drizzle-kit check
+
+      # A schema edit without its generated migration would ship a drifted database.
+      - name: Schema drift (generated migrations committed)
+        run: pnpm db:generate && git diff --exit-code drizzle/
+
+      - name: Dependency audit
+        run: pnpm audit --audit-level=high
+
+  race:
+    name: Concurrency on real Postgres
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres # throwaway CI container, not a secret
+          POSTGRES_DB: avenue_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL_TEST: postgres://postgres:postgres@localhost:5432/avenue_test
+      # The race test fails (instead of skipping) if DATABASE_URL_TEST is missing.
+      CI_REQUIRE_PG: '1'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Require a test database
+        run: |
+          if [ -z "$DATABASE_URL_TEST" ]; then
+            echo "::error::DATABASE_URL_TEST is empty; the race tests would be skipped"
+            exit 1
+          fi
+
+      - name: Oversell / deadlock race tests
+        run: pnpm exec vitest run tests/concurrency

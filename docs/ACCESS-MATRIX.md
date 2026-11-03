@@ -54,6 +54,9 @@ Implementation: `src/lib/permissions.ts` exports `PERMISSIONS: Record<Role, Set<
 | /settings | settings.write |
 | /audit | audit.read |
 | /labels | products.write |
+| /products/import, /products/export (API) | export.csv |
+| /data/export (API) | data.export.all |
+| /cron/daily (API) | Bearer CRON_SECRET, no session |
 | /profile | any authenticated |
 
 ## Seller field stripping (server-side)

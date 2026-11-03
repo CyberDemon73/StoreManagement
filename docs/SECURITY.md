@@ -17,10 +17,10 @@ The app is public on the internet. Treat every request as hostile until authenti
 - Tests: `tests/authz/matrix.test.ts` iterates every route × role from a generated route list and asserts 401/403/2xx as expected. Adding a route without updating the matrix fails the test.
 
 ## Input
-- Zod `.strict()` on body, query and params. Coerce numbers from query. Max body 1 MB (uploads 5 MB on their route only).
+- Zod `.strict()` on body, query and params. Coerce numbers from query. Max body 1 MB (uploads 4 MB on their route only (Vercel caps request bodies at 4.5 MB)).
 - Search `q`: trim, max 100 chars; passed to parameterised ILIKE only.
 - IDs are UUIDs; validate format before hitting the DB.
-- Uploads: accept `image/jpeg|png|webp` by **magic bytes** (not extension/MIME header), ≤ 5 MB, re-encode via `sharp` to strip metadata, random filename.
+- Uploads: accept `image/jpeg|png|webp` by **magic bytes** (not extension/MIME header), ≤ 4 MB (Vercel request bodies are capped at 4.5 MB), re-encode via `sharp` (fit within 2000 px, reject > 25 MP) to strip metadata, random filename.
 - CSV import: parse streaming, max 5,000 rows, cells sanitised against formula injection (`=`, `+`, `-`, `@` prefixes quoted) on export.
 
 ## Transport & headers (middleware)
@@ -53,3 +53,22 @@ Cross-Origin-Opener-Policy: same-origin
 
 ## Checklist for `/security-review`
 See `.claude/skills/security-review/SKILL.md` — it enumerates the above as pass/fail checks with commands.
+
+## Threat-model notes — Sprint 0 (2026-11-02)
+- **In-memory rate limiter fallback.** When Upstash env vars are unset the limiter is per-process. On Vercel that means per-instance, so production **must** set `UPSTASH_REDIS_REST_URL/TOKEN`; the login lockout is DB-backed and does not depend on this.
+- **Lockout is per email, not per IP.** An attacker can lock a known account out for 15 minutes by sending 10 bad passwords (per-IP 5/min limit slows this). Accepted for now; mitigation candidate: CAPTCHA or per-IP+email lockout (Sprint 6).
+- **Setup token.** `POST /setup` is public but refuses unless `users` is empty **and** `setupToken` matches `SETUP_TOKEN` (constant-time compare). Rotate `SETUP_TOKEN` after first run.
+- **CSP nonce + inline theme script.** Middleware issues a per-request nonce (`x-nonce`); the root layout applies it to its one inline script. Dev builds add `'unsafe-eval'` for HMR only.
+- **Health endpoint** is public and reveals only `{ ok, db }`.
+- **Session cookie on localhost.** `__Host-` requires `Secure`; Chrome/Firefox accept Secure cookies on `http://localhost`, Safari does not — use Chrome locally or an https tunnel.
+
+## Threat-model notes — Sprints 5–6 (2026-11-07)
+- **Peer account takeover.** MANAGER ≈ ADMIN today, so only an ADMIN may grant/remove ADMIN or touch ADMIN accounts. A peer TEMP reset emails the target and notifies every ADMIN (`ACCOUNT_RESET`), so a takeover is never silent. Reset links die on disable, admin reset, role change and password change; `reset` requires ACTIVE.
+- **Forced password change.** `mustChangePassword` blocks every route but `/auth/me`, `/auth/logout`, `/me/password`; `/me/password` is throttled 5 / 15 min per user so a stolen session cannot brute-force the current password.
+- **CSV import.** Multipart ≤ 2 MB, ≤ 5,000 rows, text-only (NUL / invalid UTF-8 → 400), all-or-nothing, manager-only (`export.csv`). Cells are stored as data and neutralised again on every export.
+- **Admin data export / backups.** ADMIN-only zip excludes sessions, tokens, idempotency keys, failed logins, known devices and password hashes. Weekly backup is a **private** Vercel Blob; anyone with the Blob token can read it — keep `BLOB_READ_WRITE_TOKEN` server-only.
+- **Cron.** `/cron/daily` is public to the session layer and requires `Authorization: Bearer CRON_SECRET` (SHA-256 + timingSafeEqual); unset secret → 401, never open.
+- **NUL bytes** in any parsed input → 400 (fuzz found a 500 path through Postgres text).
+- **Service worker on shared tills.** The catalogue data cache is cleared on login and logout so a seller cannot read a manager's cached cost/margin offline.
+- **Not audited by design:** parked carts (client convenience, 24 h TTL, never trusted) and marking notifications read (per-user state).
+- **Open:** the real-Postgres race test runs only in CI; Vercel Preview must use a Neon branch, never the production `DATABASE_URL` (user to verify in Vercel env settings).

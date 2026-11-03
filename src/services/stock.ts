@@ -1,0 +1,207 @@
+import { sql } from 'drizzle-orm';
+import type { Db } from '@/db/client';
+import { settings, stockMovements } from '@/db/schema';
+import { AppError } from '@/lib/errors';
+
+export type MovementType = 'INITIAL' | 'PURCHASE' | 'SALE' | 'RETURN' | 'ADJUSTMENT';
+
+export interface MovementInput {
+  variantId: string;
+  type: MovementType;
+  qtyDelta: number;
+  unitCost?: number | null;
+  reference?: { kind: 'sale' | 'purchase' | 'return' | 'count'; id: string } | null;
+  reason?: string | null;
+  userId: string | null;
+}
+
+export interface MovementResult {
+  movementId: string;
+  quantity: number;
+  costPrice: number | null;
+}
+
+interface LockedRow {
+  quantity: number;
+  cost_price: number | null;
+}
+
+/**
+ * The ONLY code path that changes variants.quantity (CLAUDE.md rule 1) — apart from
+ * applyInitialMovementsBulk() below, which is restricted to variants created in the same transaction.
+ * Call inside a transaction: locks the variant row, checks the result, appends the ledger row,
+ * and updates quantity (+ weighted-average cost on incoming stock) atomically.
+ */
+export async function applyMovement(tx: Db, input: MovementInput): Promise<MovementResult> {
+  if (!Number.isInteger(input.qtyDelta) || input.qtyDelta === 0) {
+    throw new AppError('VALIDATION', 'qtyDelta must be a non-zero integer', { fields: { qtyDelta: 'Must be a non-zero integer' } });
+  }
+
+  const locked = (await tx.execute(
+    sql`select quantity, cost_price from variants where id = ${input.variantId} for update`,
+  )) as { rows: LockedRow[] };
+  const current = locked.rows[0];
+  if (!current) throw new AppError('NOT_FOUND', 'Variant not found');
+
+  const newQty = current.quantity + input.qtyDelta;
+  if (newQty > 2_147_483_647 || newQty < -2_147_483_648) {
+    throw new AppError('VALIDATION', 'Quantity out of range', { fields: { qtyDelta: 'Out of range' } });
+  }
+  if (newQty < 0) {
+    const [cfg] = await tx.select({ allow: settings.allowNegativeStock }).from(settings).limit(1);
+    if (!cfg?.allow) {
+      throw new AppError('INSUFFICIENT_STOCK', 'Insufficient stock', { fields: { [input.variantId]: 'Insufficient stock' } });
+    }
+  }
+
+  // Incoming stock with a known cost re-averages; sales/returns/adjustments keep the cost.
+  let costPrice = current.cost_price;
+  const incoming = (input.type === 'INITIAL' || input.type === 'PURCHASE') && input.qtyDelta > 0;
+  if (incoming && input.unitCost != null) {
+    const oldQty = Math.max(0, current.quantity);
+    costPrice =
+      current.cost_price == null || oldQty === 0
+        ? input.unitCost
+        : Math.round((oldQty * current.cost_price + input.qtyDelta * input.unitCost) / (oldQty + input.qtyDelta));
+  }
+
+  const [movement] = await tx
+    .insert(stockMovements)
+    .values({
+      variantId: input.variantId,
+      type: input.type,
+      qtyDelta: input.qtyDelta,
+      qtyAfter: newQty,
+      unitCost: input.unitCost ?? null,
+      referenceKind: input.reference?.kind ?? null,
+      referenceId: input.reference?.id ?? null,
+      reason: input.reason ?? null,
+      userId: input.userId,
+    })
+    .returning({ id: stockMovements.id });
+  if (!movement) throw new Error('movement insert returned no row');
+
+  await tx.execute(
+    sql`update variants set quantity = ${newQty}, cost_price = ${costPrice}, updated_at = now() where id = ${input.variantId}`,
+  );
+
+  return { movementId: movement.id, quantity: newQty, costPrice };
+}
+
+export interface InitialMovementInput {
+  variantId: string;
+  /** Opening quantity; negative only when settings.allowNegativeStock. */
+  qty: number;
+  unitCost?: number | null;
+  note?: string | null;
+  userId: string | null;
+}
+
+const BULK_CHUNK = 1000;
+
+/**
+ * Bulk INITIAL movements for variants CREATED IN THE SAME TRANSACTION (CSV import). Precondition,
+ * enforced: every target is locked and still has quantity 0 and no ledger rows — so qty_after = qty
+ * and nobody else can see the rows, which is what makes skipping per-row applyMovement() safe.
+ * Writes one multi-row ledger insert and one `update … from (values …)` per chunk instead of three
+ * round trips per variant (5,000 rows must fit the import's time budget).
+ */
+export async function applyInitialMovementsBulk(tx: Db, items: InitialMovementInput[]): Promise<void> {
+  if (items.length === 0) return;
+  const ids = items.map((i) => i.variantId);
+  if (new Set(ids).size !== ids.length) throw new Error('applyInitialMovementsBulk: each variant may appear only once');
+  for (const i of items) {
+    if (!Number.isInteger(i.qty) || i.qty === 0 || i.qty > 2_147_483_647 || i.qty < -2_147_483_648) {
+      throw new AppError('VALIDATION', 'qty must be a non-zero integer', { fields: { [i.variantId]: 'Must be a non-zero integer' } });
+    }
+  }
+  if (items.some((i) => i.qty < 0)) {
+    const [cfg] = await tx.select({ allow: settings.allowNegativeStock }).from(settings).limit(1);
+    if (!cfg?.allow) throw new AppError('INSUFFICIENT_STOCK', 'Insufficient stock', { fields: { [items.find((i) => i.qty < 0)!.variantId]: 'Insufficient stock' } });
+  }
+
+  for (let at = 0; at < items.length; at += BULK_CHUNK) {
+    const chunk = items.slice(at, at + BULK_CHUNK);
+    // One text[] parameter keeps the statement size flat however many ids the chunk has.
+    const idArray = `{${chunk.map((i) => i.variantId).join(',')}}`;
+    const state = (await tx.execute(sql`
+      select v.id, v.quantity, exists(select 1 from stock_movements m where m.variant_id = v.id) as has_moves
+      from variants v where v.id = any(${idArray}::uuid[]) order by v.id for update of v`)) as { rows: { id: string; quantity: number; has_moves: boolean }[] };
+    if (state.rows.length !== chunk.length) throw new AppError('NOT_FOUND', 'Variant not found');
+    const used = state.rows.find((r) => Number(r.quantity) !== 0 || r.has_moves);
+    if (used) throw new Error(`applyInitialMovementsBulk is only for new variants; ${used.id} already has stock or movements`);
+
+    await tx.insert(stockMovements).values(
+      chunk.map((i) => ({ variantId: i.variantId, type: 'INITIAL' as const, qtyDelta: i.qty, qtyAfter: i.qty, unitCost: i.unitCost ?? null, reason: i.note ?? null, userId: i.userId })),
+    );
+    // Same cost rule as applyMovement() from quantity 0: incoming stock with a known cost sets it.
+    await tx.execute(sql`
+      update variants as v
+      set quantity = x.qty,
+          cost_price = case when x.qty > 0 and x.cost is not null then x.cost else v.cost_price end,
+          updated_at = now()
+      from (values ${sql.join(
+        chunk.map((i) => sql`(${i.variantId}::uuid, ${i.qty}::int, ${i.unitCost ?? null}::int)`),
+        sql`, `,
+      )}) as x(id, qty, cost)
+      where v.id = x.id`);
+  }
+}
+
+export interface LockedVariant {
+  quantity: number;
+  costPrice: number | null;
+}
+
+/**
+ * Lock several variant rows in one statement, in id order, so concurrent multi-variant
+ * transactions (sales, purchases, counts) always acquire locks in the same sequence and
+ * cannot deadlock. Call this before the first applyMovement of a transaction.
+ */
+export async function lockVariants(tx: Db, ids: string[]): Promise<Map<string, LockedVariant>> {
+  const unique = [...new Set(ids)].sort();
+  if (unique.length === 0) return new Map();
+  // Lock one row at a time in JS-sorted order so the acquisition order is a hard guarantee.
+  for (const id of unique) {
+    await tx.execute(sql`select id from variants where id = ${id} for update`);
+  }
+  const result = (await tx.execute(
+    sql`select id, quantity, cost_price from variants where id = any(array[${sql.join(
+      unique.map((id) => sql`${id}`),
+      sql`, `,
+    )}]::uuid[]) order by id for update`,
+  )) as { rows: { id: string; quantity: number; cost_price: number | null }[] };
+  const map = new Map<string, LockedVariant>();
+  for (const r of result.rows) map.set(r.id, { quantity: Number(r.quantity), costPrice: r.cost_price == null ? null : Number(r.cost_price) });
+  const missing = unique.filter((id) => !map.has(id));
+  if (missing.length > 0) {
+    throw new AppError('NOT_FOUND', 'Variant not found', { fields: Object.fromEntries(missing.map((id) => [id, 'Variant not found'])) });
+  }
+  return map;
+}
+
+/** Lock every variant first (sorted), then apply the movements in the given order. */
+export async function applyMovements(tx: Db, inputs: MovementInput[]): Promise<MovementResult[]> {
+  await lockVariants(
+    tx,
+    inputs.map((i) => i.variantId),
+  );
+  const out: MovementResult[] = [];
+  for (const input of inputs) out.push(await applyMovement(tx, input));
+  return out;
+}
+
+/** Document number prefix: PO (purchases), SC (counts), or settings.saleNumberPrefix for sales. */
+export type NumberPrefix = string;
+
+/** Allocate the next document number (e.g. PO-000001) under a row lock on sale_counters. */
+export async function nextNumber(tx: Db, prefix: NumberPrefix): Promise<string> {
+  if (!/^[A-Z]{1,6}$/.test(prefix)) {
+    throw new AppError('VALIDATION', 'Invalid document prefix', { fields: { prefix: 'Use 1–6 uppercase letters' } });
+  }
+  await tx.execute(sql`insert into sale_counters (prefix) values (${prefix}) on conflict (prefix) do nothing`);
+  const locked = (await tx.execute(sql`select next from sale_counters where prefix = ${prefix} for update`)) as { rows: { next: number }[] };
+  const n = Number(locked.rows[0]?.next ?? 1);
+  await tx.execute(sql`update sale_counters set next = ${n + 1} where prefix = ${prefix}`);
+  return `${prefix}-${String(n).padStart(6, '0')}`;
+}
