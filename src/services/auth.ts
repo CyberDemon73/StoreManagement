@@ -97,6 +97,7 @@ export async function login(
     await recordFailure(db, input.email, ctx.ip);
     throw new AppError('UNAUTHENTICATED', INVALID_CREDENTIALS);
   }
+  if (user.status === 'INVITED') throw new AppError('FORBIDDEN', 'Invitation not accepted');
   if (user.status !== 'ACTIVE') throw new AppError('FORBIDDEN', 'Account disabled');
 
   await clearFailures(db, input.email);
