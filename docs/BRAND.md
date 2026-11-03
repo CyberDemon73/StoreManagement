@@ -1,4 +1,4 @@
-# Avenue Stock — brand kit
+# Avenue Brand — brand kit
 
 Calm, quiet, confident: a well-run boutique's back office. The brand is one mark, one typeface and one accent colour, used sparingly.
 
@@ -22,7 +22,7 @@ In code use `<LogoMark size variant />`, `<Wordmark />` and `<LogoLockup subtitl
 
 ## Wordmark
 
-"Avenue" in Inter 600, "Stock" in Inter 400, −0.02 em tracking, one space between. Ink on light, `--ink` dark value on dark. Spoken name: "Avenue Stock"; short name (home screen): "Avenue".
+"Avenue" in Inter 600, "Brand" in Inter 400, −0.02 em tracking, one space between. Ink on light, `--ink` dark value on dark. Spoken name: "Avenue Brand"; short name (home screen): "Avenue".
 
 ## Colour
 
@@ -48,12 +48,12 @@ Inter (Google Fonts, self-hosted by `next/font`). Headings 600, body 400, small 
 
 ## Voice
 
-Short, specific, calm. Numbers in EGP with two decimals. No exclamation marks. Errors say what happened and that nothing was changed. The product is "Avenue Stock"; the store is "Avenue".
+Short, specific, calm. Numbers in EGP with two decimals. No exclamation marks. Errors say what happened and that nothing was changed. The product is "Avenue Brand"; the store is "Avenue".
 
 ## Applications
 
 - **App chrome**: mark 32 px + wordmark in the sidebar; mark alone in the icon rail and phone top bar.
-- **Auth pages**: mark 64 px centred above the wordmark and "Zamalek store".
+- **Auth pages**: mark 64 px centred above the wordmark and "Tagamo3 store".
 - **Receipts**: mono glyph 28 px above the store name (toggle in Settings → Receipt).
 - **Labels (A4)**: mono glyph 10 px before the product name when "Show store logo" is on.
 - **PWA**: theme colour `#3F6B5C`, background `#F7F6F3`, short name "Avenue".

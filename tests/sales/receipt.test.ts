@@ -37,7 +37,7 @@ describe('GET /sales/:id/receipt', () => {
     expect(res.headers.get('content-type')).toContain('application/json');
     const body = await res.json();
     expect(body.sale).toMatchObject({ id: sale.id, number: 'AS-000001', total: 3000, cost: 1500 });
-    expect(body.store).toMatchObject({ storeName: 'Avenue Stock', currency: 'EGP' });
+    expect(body.store).toMatchObject({ storeName: 'Avenue Brand', currency: 'EGP' });
     expect(body.store).toHaveProperty('receiptFooter');
   });
 
@@ -60,7 +60,7 @@ describe('GET /sales/:id/receipt', () => {
     const html = await res.text();
     expect(html).toContain('<!doctype html>');
     expect(html).toContain('AS-000001');
-    expect(html).toContain('Avenue Stock');
+    expect(html).toContain('Avenue Brand');
     expect(html).toContain('Chino Slim');
     expect(html).toContain('CASH');
     expect(html).not.toContain('<script');

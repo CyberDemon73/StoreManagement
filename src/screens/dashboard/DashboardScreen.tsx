@@ -28,7 +28,7 @@ export function DashboardScreen() {
 
   return (
     <>
-      <PageHeader title="Dashboard" description={`${range.label} · Zamalek store · EGP`} actions={<DateRangePicker value={range} onChange={setRange} compact={bp !== 'desktop'} />} />
+      <PageHeader title="Dashboard" description={`${range.label} · Tagamo3 store · EGP`} actions={<DateRangePicker value={range} onChange={setRange} compact={bp !== 'desktop'} />} />
       <Page>
         {dash.error && !d ? <ErrorState error={dash.error} onRetry={() => void dash.refetch()} /> : (
           <>

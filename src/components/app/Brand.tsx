@@ -36,7 +36,7 @@ export function Wordmark({ className, size = 'md', tone = 'ink' }: { className?:
   const cls = size === 'lg' ? 'text-[26px]' : size === 'sm' ? 'text-sm' : 'text-lg';
   return (
     <span className={cn('whitespace-nowrap font-semibold leading-none tracking-[-0.02em]', cls, tone === 'inverse' ? 'text-accent-ink' : 'text-ink', className)}>
-      Avenue<span className={cn('font-normal', tone === 'inverse' ? 'opacity-80' : 'text-ink-2')}> Stock</span>
+      Avenue<span className={cn('font-normal', tone === 'inverse' ? 'opacity-80' : 'text-ink-2')}> Brand</span>
     </span>
   );
 }

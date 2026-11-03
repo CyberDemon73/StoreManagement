@@ -6,7 +6,7 @@ import type { Sale, Settings } from '@/types';
 
 /** Print-friendly receipt (80 mm roll). Wrap in `.print-area` to be the only thing printed. */
 export function Receipt({ sale, settings, className }: { sale: Sale; settings?: Pick<Settings, 'storeName' | 'receiptHeader' | 'receiptFooter' | 'receiptShowLogo' | 'currency'>; className?: string }) {
-  const s = settings ?? { storeName: 'Avenue', receiptHeader: '26 Brazil St, Zamalek · 02 2735 1180', receiptFooter: 'Exchanges within 14 days with receipt. Thank you.', receiptShowLogo: true, currency: 'EGP' };
+  const s = settings ?? { storeName: 'Avenue', receiptHeader: 'Tagamo3 · 02 2735 1180', receiptFooter: 'Exchanges within 14 days with receipt. Thank you.', receiptShowLogo: true, currency: 'EGP' };
   return (
     <div className={cn('print-area mx-auto w-full max-w-[320px] rounded-card border border-line bg-white p-4 font-mono text-[12px] leading-relaxed text-[#1F2421] print:max-w-none print:border-0 print:p-0', className)}>
       {s.receiptShowLogo && <div className="mb-1 flex flex-col items-center gap-1"><LogoMark size={28} variant="mono" className="text-[#1F2421]" /><p className="text-center text-[14px] font-bold tracking-wide">{s.storeName.toUpperCase()} STOCK</p></div>}

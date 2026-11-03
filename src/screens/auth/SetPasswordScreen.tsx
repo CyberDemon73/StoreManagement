@@ -59,7 +59,7 @@ export function SetPasswordScreen() {
     <div className="flex flex-col gap-3.5">
       <Card as="section" aria-labelledby="inv-h" className="p-6">
         <form className="flex flex-col gap-3.5" onSubmit={submit} noValidate>
-          <div><h2 id="inv-h" className="text-lg font-semibold">Welcome{name ? `, ${name.split(' ')[0]}` : ''}</h2><p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-ink-2">{by} invited you to Avenue Stock as a <RoleBadge role={role} /></p></div>
+          <div><h2 id="inv-h" className="text-lg font-semibold">Welcome{name ? `, ${name.split(' ')[0]}` : ''}</h2><p className="mt-1 flex flex-wrap items-center gap-1.5 text-sm text-ink-2">{by} invited you to Avenue Brand as a <RoleBadge role={role} /></p></div>
           <Field label="Email" htmlFor="i-email"><Input id="i-email" type="email" size="lg" value={email} readOnly autoComplete="username" wrapperClassName="bg-surface-2" /></Field>
           <PasswordField id="i-pw" label="Create a password" value={pw} onChange={setPw} placeholder="At least 12 characters" error={error} autoFocus />
           <Checkbox checked={agree} onChange={setAgree} label="I agree to the store's device & data policy" />

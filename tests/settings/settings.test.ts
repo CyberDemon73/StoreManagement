@@ -27,7 +27,7 @@ describe('GET /settings', () => {
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body).toMatchObject({
-      storeName: 'Avenue Stock',
+      storeName: 'Avenue Brand',
       currency: 'EGP',
       timezone: 'Africa/Cairo',
       dateFormat: 'DD/MM/YYYY',
@@ -58,7 +58,7 @@ describe('GET /settings', () => {
     const res = await call(GET, { path: '/api/v1/settings', cookie: await sessionCookieFor(db, s.id) });
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body).toMatchObject({ storeName: 'Avenue Stock', currency: 'EGP', sellerDiscountCapPct: 10 });
+    expect(body).toMatchObject({ storeName: 'Avenue Brand', currency: 'EGP', sellerDiscountCapPct: 10 });
     expect(body).not.toHaveProperty('largeRefundAlert');
     expect(body).not.toHaveProperty('nextSaleNumber');
     expect(body).not.toHaveProperty('sessionIdleHours');
@@ -93,7 +93,7 @@ describe('PATCH /settings', () => {
     expect(rows).toHaveLength(1);
     expect(rows[0]!.entity).toBe('settings');
     expect(rows[0]!.entityId).toBeNull();
-    expect(rows[0]!.before).toEqual({ storeName: 'Avenue Stock', timezone: 'Africa/Cairo', sellerDiscountCapPct: 10, sizePresets: [] });
+    expect(rows[0]!.before).toEqual({ storeName: 'Avenue Brand', timezone: 'Africa/Cairo', sellerDiscountCapPct: 10, sizePresets: [] });
     expect(rows[0]!.after).toEqual({
       storeName: 'Avenue Downtown',
       timezone: 'Europe/London',
@@ -193,7 +193,7 @@ describe('PATCH /settings', () => {
     const { cookie } = await managerCookie();
     await patch(cookie, { timezone: 'Mars/Olympus', storeName: 'Nope' });
     const body = await (await call(GET, { path: '/api/v1/settings', cookie })).json();
-    expect(body).toMatchObject({ timezone: 'Africa/Cairo', storeName: 'Avenue Stock' });
+    expect(body).toMatchObject({ timezone: 'Africa/Cairo', storeName: 'Avenue Brand' });
   });
 
   it('forbids a SELLER', async () => {

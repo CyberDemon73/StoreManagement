@@ -109,7 +109,7 @@ async function issueInviteToken(tx: Db, userId: string): Promise<string> {
 }
 
 function inviteText(name: string, actorName: string, token: string): string {
-  return `Hello ${name},\n\n${actorName} invited you to Avenue Stock. Use this link within 48 hours to set your password:\n${appUrl(`/set-password?token=${token}`)}\n`;
+  return `Hello ${name},\n\n${actorName} invited you to Avenue Brand. Use this link within 48 hours to set your password:\n${appUrl(`/set-password?token=${token}`)}\n`;
 }
 
 /**
@@ -188,7 +188,7 @@ export async function createUser(
   if (inviteToken) {
     await sendSafely(
       user.email,
-      'You have been invited to Avenue Stock',
+      'You have been invited to Avenue Brand',
       inviteText(user.name, actor.name, inviteToken),
       user.id,
     );
@@ -320,13 +320,13 @@ export async function resetUserPassword(
 
   const { target, inviteToken } = result;
   if (inviteToken) {
-    await sendSafely(target.email, 'You have been invited to Avenue Stock', inviteText(target.name, actor.name, inviteToken), target.id);
+    await sendSafely(target.email, 'You have been invited to Avenue Brand', inviteText(target.name, actor.name, inviteToken), target.id);
     return {};
   }
   if (resetToken) {
     await sendSafely(
       target.email,
-      'Reset your Avenue Stock password',
+      'Reset your Avenue Brand password',
       `Hello ${target.name},\n\nYour password was reset by ${actor.name}. Use this link within 30 minutes to choose a new password:\n${appUrl(`/reset?token=${resetToken}`)}\n\nIf you did not expect this, contact your store administrator.\n`,
       target.id,
     );
@@ -334,7 +334,7 @@ export async function resetUserPassword(
     // Never include the temporary password: it is handed over in person.
     await sendSafely(
       target.email,
-      'Your Avenue Stock password was reset',
+      'Your Avenue Brand password was reset',
       `Hello ${target.name},\n\nYour password was reset by ${actor.name}. You have been signed out everywhere; ${actor.name} will give you a temporary password, and you will choose a new one when you next sign in.\n\nIf you did not expect this, contact your store administrator.\n`,
       target.id,
     );

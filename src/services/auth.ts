@@ -141,7 +141,7 @@ export async function forgot(db: Db, input: ForgotInput, ctx: ReqCtx): Promise<v
     try {
       await sendEmail({
         to: user.email,
-        subject: 'Reset your Avenue Stock password',
+        subject: 'Reset your Avenue Brand password',
         text: `Hello ${user.name},\n\nUse this link within 30 minutes to choose a new password:\n${link}\n\nIf you did not ask for this, ignore this email.`,
       });
     } catch (err) {

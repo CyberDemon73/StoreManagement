@@ -6,7 +6,7 @@ const envSchema = z.object({
   UPSTASH_REDIS_REST_URL: z.string().url().optional(),
   UPSTASH_REDIS_REST_TOKEN: z.string().min(1).optional(),
   RESEND_API_KEY: z.string().min(1).optional(),
-  EMAIL_FROM: z.string().min(1).default('Avenue Stock <no-reply@localhost>'),
+  EMAIL_FROM: z.string().min(1).default('Avenue Brand <no-reply@localhost>'),
   APP_URL: z.string().url().default('http://localhost:3000'),
   SESSION_SECRET: z.string().min(1).optional(),
   BLOB_READ_WRITE_TOKEN: z.string().min(1).optional(),

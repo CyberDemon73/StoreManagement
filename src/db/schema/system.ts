@@ -21,7 +21,7 @@ export const settings = pgTable(
   'settings',
   {
     id: integer('id').primaryKey().default(1),
-    storeName: text('store_name').notNull().default('Avenue Stock'),
+    storeName: text('store_name').notNull().default('Avenue Brand'),
     logoUrl: text('logo_url'),
     phone: text('phone'),
     address: text('address'),

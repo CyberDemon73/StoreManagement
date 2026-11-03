@@ -7,13 +7,13 @@ import { Providers } from '@/components/app/Providers';
 const inter = Inter({ variable: '--font-inter', subsets: ['latin'], display: 'swap' });
 
 export const metadata: Metadata = {
-  title: { default: 'Avenue Stock', template: '%s · Avenue Stock' },
+  title: { default: 'Avenue Brand', template: '%s · Avenue Brand' },
   description: 'Inventory, sales and reporting for Avenue.',
-  applicationName: 'Avenue Stock',
+  applicationName: 'Avenue Brand',
   manifest: '/manifest.json',
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'Avenue' },
   icons: { apple: '/icons/apple-touch-icon.png' }, // favicon.ico + icon.svg in src/app are picked up automatically
-  openGraph: { title: 'Avenue Stock', description: 'Inventory, sales and reporting for the shop floor.', images: [{ url: '/brand/og-image.png', width: 1200, height: 630 }] },
+  openGraph: { title: 'Avenue Brand', description: 'Inventory, sales and reporting for the shop floor.', images: [{ url: '/brand/og-image.png', width: 1200, height: 630 }] },
 };
 
 export const viewport: Viewport = {

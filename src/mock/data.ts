@@ -361,7 +361,7 @@ export const stockCounts: StockCount[] = (() => {
 
 /* ---------- Settings ---------- */
 export const settings: Settings = {
-  storeName: 'Avenue', phone: '02 2735 1180', address: '26 Brazil St, Zamalek, Cairo', currency: 'EGP', timezone: 'Africa/Cairo', dateFormat: 'DD/MM/YYYY',
+  storeName: 'Avenue', phone: '02 2735 1180', address: 'Tagamo3, New Cairo', currency: 'EGP', timezone: 'Africa/Cairo', dateFormat: 'DD/MM/YYYY',
   lowStockDefault: 5, saleNumberPrefix: 'AV-', nextSaleNumber: saleNo, sellerDiscountCapPct: 10, allowNegativeStock: false, requirePhoneOnTransfer: true,
   sizePresets: [
     { name: 'Apparel', sizes: SIZES.apparel },
@@ -369,7 +369,7 @@ export const settings: Settings = {
     { name: 'Kids 2–14', sizes: SIZES.kids },
   ],
   colorPresets: Object.values(COLORS),
-  receiptHeader: '26 Brazil St, Zamalek · 02 2735 1180', receiptFooter: 'Exchanges within 14 days with receipt. Thank you.', receiptShowLogo: true,
+  receiptHeader: 'Tagamo3 · 02 2735 1180', receiptFooter: 'Exchanges within 14 days with receipt. Thank you.', receiptShowLogo: true,
   sessionIdleHours: 12, passwordRotationDays: 90, lockoutEnabled: true, largeRefundAlert: 100000,
 };
 

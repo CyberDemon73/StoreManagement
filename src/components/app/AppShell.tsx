@@ -50,7 +50,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       <aside className="app-sidebar sticky top-0 hidden h-dvh w-[248px] shrink-0 flex-col border-r border-line bg-surface px-3 py-4 xl:flex" aria-label="Main">
         <Link href={role === 'SELLER' ? '/home' : '/dashboard'} className="mb-4 flex items-center gap-3 rounded-lg px-2 py-1">
           <LogoMark />
-          <span><Wordmark size="sm" className="block" /><span className="block text-[11px] text-ink-2">Zamalek store</span></span>
+          <span><Wordmark size="sm" className="block" /><span className="block text-[11px] text-ink-2">Tagamo3 store</span></span>
         </Link>
         <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto">
           {nav.map((section, i) => (
@@ -117,7 +117,7 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
 
   return (
     <header className="app-topbar no-print sticky top-0 z-40 flex min-h-14 items-center gap-2 border-b border-line bg-surface/95 px-3 backdrop-blur safe-top md:px-5">
-      <div className="flex items-center gap-2 md:hidden"><LogoMark size="sm" title="Avenue Stock" /></div>
+      <div className="flex items-center gap-2 md:hidden"><LogoMark size="sm" title="Avenue Brand" /></div>
       <div id="page-title-slot" className="min-w-0 flex-1" />
       <button type="button" onClick={onSearch} className="hidden min-h-9 w-64 items-center gap-2 rounded-input border border-line bg-surface px-3 text-sm text-ink-3 hover:bg-surface-2 lg:flex xl:w-80" aria-label="Search (Command K)"><Search className="size-4" aria-hidden /><span className="flex-1 text-left">Search products, SKUs, sales…</span><Kbd>⌘K</Kbd></button>
       <Button variant="ghost" iconOnly aria-label="Search" onClick={onSearch} className="lg:hidden"><Search /></Button>
