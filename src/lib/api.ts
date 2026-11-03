@@ -24,8 +24,8 @@ import type {
  * the mock everywhere for a demo without a database.
  */
 export const USE_MOCK_ALL = process.env.NEXT_PUBLIC_USE_MOCK === '1';
-const LIVE_PREFIXES = ['/auth/', '/setup', '/products', '/variants', '/brands', '/categories', '/suppliers', '/uploads', '/stock', '/sales', '/analytics'];
-const MOCK_ONLY = [/^\/products\/(export|import)/, /^\/variants\/[^/]+\/sold/, /^\/me\//];
+const LIVE_PREFIXES = ['/auth/', '/setup', '/products', '/variants', '/brands', '/categories', '/suppliers', '/uploads', '/stock', '/sales', '/analytics', '/users', '/settings', '/audit', '/notifications', '/me/password', '/me'];
+const MOCK_ONLY = [/^\/products\/(export|import)/, /^\/variants\/[^/]+\/sold/];
 export function isLive(path: string): boolean {
   if (USE_MOCK_ALL) return false;
   if (MOCK_ONLY.some((r) => r.test(path))) return false;
@@ -153,7 +153,12 @@ export const api = {
     /** POST /setup */
     setup: (input: { name: string; email: string; password: string; storeName: string; currency: string; setupToken: string }) => call<{ user: User }>(() => ({ user: store.listUsers()[0]! }), 'POST', '/setup', input),
     /** POST /me/password */
+    /** POST /me/password → 204; rotates the session cookie. */
     changePassword: (current: string, next: string) => call<void>(() => undefined, 'POST', '/me/password', { current, next }),
+    /** POST /auth/accept-invite → 200 { user } + cookie. */
+    acceptInvite: (token: string, password: string) => call<{ user: User }>(() => ({ user: store.listUsers()[0]! }), 'POST', '/auth/accept-invite', { token, password }),
+    /** PATCH /me → updated user */
+    updateMe: (patch: { name: string }) => call<User>(() => ({ ...store.listUsers()[0]!, name: patch.name }), 'PATCH', '/me', patch),
   },
 
   products: {
@@ -169,8 +174,13 @@ export const api = {
     archive: (id: string, archive = true) => call<ProductDetail>(() => store.archiveProduct(id, ctx.userId, archive), 'POST', `/products/${id}/${archive ? 'archive' : 'unarchive'}`),
     /** POST /products/:id/variants */
     addVariants: (id: string, input: NonNullable<store.CreateProductInput['variants']>) => call<Variant[]>(() => store.addVariants(id, input, ctx.userId), 'POST', `/products/${id}/variants`, input),
-    /** GET /products/export → CSV (mock returns a blob URL) */
-    exportCsv: () => call<string>(() => 'data:text/csv,' + encodeURIComponent('id,name,baseSku\n' + store.raw.products.map((p) => `${p.id},${p.name},${p.baseSku}`).join('\n')), 'GET', '/products/export'),
+    /** GET /products/export → CSV stream. Returns a blob: URL ready to download. */
+    exportCsv: async (): Promise<string> => {
+      if (!isLive('/products/export')) return 'data:text/csv,' + encodeURIComponent('id,name,baseSku\n' + store.raw.products.map((p) => `${p.id},${p.name},${p.baseSku}`).join('\n'));
+      const res = await fetch('/api/v1/products/export', { credentials: 'same-origin', headers: { 'X-Requested-With': 'AvenueStock' } });
+      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new ApiError(e.error?.code ?? 'INTERNAL', e.error?.message ?? res.statusText, res.status); }
+      return URL.createObjectURL(await res.blob());
+    },
   },
 
   variants: {
@@ -295,13 +305,14 @@ export const api = {
     /** GET /users */
     list: () => call<User[]>(() => store.listUsers(), 'GET', '/users'),
     /** POST /users */
-    create: (input: { name: string; email: string; role: Role; mode: 'INVITE' | 'TEMP' }) => call<User>(() => store.createUser(input, ctx.userId), 'POST', '/users', input),
+    /** POST /users → 201 { user, temporaryPassword? } (TEMP only, shown once). */
+    create: (input: { name: string; email: string; role: Role; mode: 'INVITE' | 'TEMP' }) => call<{ user: User; temporaryPassword?: string }>(() => ({ user: store.createUser(input, ctx.userId) }), 'POST', '/users', input),
     /** PATCH /users/:id */
-    update: (id: string, patch: Partial<Pick<User, 'name' | 'role' | 'roles'>>) => call<User>(() => store.updateUser(id, patch, ctx.userId), 'PATCH', `/users/${id}`, patch),
+    update: (id: string, patch: Partial<Pick<User, 'name' | 'role'>>) => call<User>(() => store.updateUser(id, patch, ctx.userId), 'PATCH', `/users/${id}`, pick(patch, ['name', 'role'])),
     /** POST /users/:id/disable | /enable */
     setEnabled: (id: string, enabled: boolean) => call<User>(() => store.updateUser(id, { status: enabled ? 'ACTIVE' : 'DISABLED' }, ctx.userId), 'POST', `/users/${id}/${enabled ? 'enable' : 'disable'}`),
     /** POST /users/:id/reset-password */
-    resetPassword: (id: string, mode: 'EMAIL' | 'TEMP') => call<void>(() => undefined, 'POST', `/users/${id}/reset-password`, { mode }),
+    resetPassword: (id: string, mode: 'EMAIL' | 'TEMP') => call<{ temporaryPassword?: string }>(() => ({}), 'POST', `/users/${id}/reset-password`, { mode }),
     /** POST /users/:id/revoke-sessions */
     revokeSessions: (id: string) => call<User>(() => store.revokeSessions(id), 'POST', `/users/${id}/revoke-sessions`),
   },
@@ -310,9 +321,18 @@ export const api = {
     /** GET /settings */
     get: () => call<Settings>(() => store.getSettings(), 'GET', '/settings'),
     /** PATCH /settings */
-    update: (patch: Partial<Settings>) => call<Settings>(() => store.updateSettings(patch, ctx.userId), 'PATCH', '/settings', patch),
-    /** POST /products/import?dryRun=1 */
-    importPreview: (file: File) => call<{ rows: number; ok: number; errors: { row: number; message: string; data: Record<string, string> }[] }>(() => ({ rows: 40, ok: 38, errors: [{ row: 7, message: 'Unknown brand', data: { name: 'Chino Slim', brand: 'Northlne', size: '32', color: 'Sand', price: '1090.00', qty: '4' } }, { row: 23, message: 'Price not a number', data: { name: 'Canvas Low Sneaker', brand: 'Casa Lino', size: '42', color: 'White', price: 'abc', qty: '6' } }] }), 'POST', '/products/import', { name: file.name }, { dryRun: 1 }),
+    /** PATCH /settings is strict: lockoutEnabled, passwordRotationDays, nextSaleNumber are read-only. */
+    update: (patch: Partial<Settings>) => {
+      const { lockoutEnabled, passwordRotationDays, nextSaleNumber, ...body } = patch as Settings & Record<string, unknown>;
+      void lockoutEnabled; void passwordRotationDays; void nextSaleNumber;
+      return call<Settings>(() => store.updateSettings(patch, ctx.userId), 'PATCH', '/settings', body);
+    },
+    /** POST /products/import?dryRun=1 (multipart `file`) → preview with row errors. */
+    importPreview: (file: File): Promise<{ rows: number; ok: number; errors: { row: number; message: string; data: Record<string, string> }[] }> => {
+      if (!isLive('/products')) return mock(() => ({ rows: 40, ok: 38, errors: [{ row: 7, message: 'Unknown brand', data: { name: 'Chino Slim', brand: 'Northlne', size: '32', color: 'Sand', price: '1090.00', qty: '4' } }, { row: 23, message: 'Price not a number', data: { name: 'Canvas Low Sneaker', brand: 'Casa Lino', size: '42', color: 'White', price: 'abc', qty: '6' } }] }));
+      const form = new FormData(); form.append('file', file);
+      return requestMultipart<{ rows: number; ok: number; errors: { row: number; message: string; data: Record<string, string> }[] }>('/products/import?dryRun=1', form);
+    },
   },
 
   audit: {
@@ -323,8 +343,12 @@ export const api = {
   notifications: {
     /** GET /notifications */
     list: () => call<Notification[]>(() => store.listNotifications(), 'GET', '/notifications'),
-    /** POST /notifications/:id/read | /notifications/read-all */
-    markRead: (id?: string) => call<Notification[]>(() => store.markRead(id), 'POST', id ? `/notifications/${id}/read` : '/notifications/read-all'),
+    /** POST /notifications/:id/read | /notifications/read-all → 204. Server-side the mock still returns the list for the UI's optimistic update. */
+    markRead: async (id?: string): Promise<Notification[]> => {
+      if (!isLive('/notifications')) return mock(() => store.markRead(id));
+      await request<void>('POST', id ? `/notifications/${id}/read` : '/notifications/read-all');
+      return request<Notification[]>('GET', '/notifications');
+    },
   },
 
   /** GET /labels?variantIds= */

@@ -56,9 +56,14 @@ export function CreateUserPanel({ open, onClose, onCreated }: { open: boolean; o
     if (Object.keys(errs).length) return;
     setBusy(true);
     try {
-      const u = await api.users.create({ name: name.trim(), email: email.trim(), role, mode });
+      const { user: u, temporaryPassword } = await api.users.create({ name: name.trim(), email: email.trim(), role, mode });
       onCreated(u);
-      toast({ kind: 'success', title: mode === 'INVITE' ? `Invite sent to ${u.email}` : `${u.name} created`, body: mode === 'INVITE' ? 'The link expires in 7 days.' : 'Share the temporary password in person.' });
+      if (mode === 'TEMP' && temporaryPassword) {
+        // Shown once — the server never returns it again. Copy before closing the toast.
+        toast({ kind: 'success', title: `${u.name} created`, body: `Temporary password: ${temporaryPassword}`, durationMs: 60_000, action: { label: 'Copy', onClick: () => void navigator.clipboard?.writeText(temporaryPassword).catch(() => undefined) } });
+      } else {
+        toast({ kind: 'success', title: mode === 'INVITE' ? `Invite sent to ${u.email}` : `${u.name} created`, body: mode === 'INVITE' ? 'The link expires in 7 days.' : undefined });
+      }
       reset(); onClose();
     } catch (err) {
       if (err instanceof ApiError) setErrors(err.fields ?? { form: err.message }); else setErrors({ form: 'Something went wrong.' });

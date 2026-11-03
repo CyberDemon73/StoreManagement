@@ -60,14 +60,14 @@ export function UserActions({ user, onChange }: { user: User; onChange: (u: User
       </Popover>
 
       <Dialog open={dialog === 'role'} onClose={() => setDialog(null)} title={`Edit role · ${user.name}`} description="Takes effect at their next request. Recorded in the audit log."
-        footer={<><Button onClick={() => setDialog(null)}>Cancel</Button><Button variant="primary" loading={busy} disabled={role === user.role} onClick={() => void run(() => api.users.update(user.id, { role, roles: Array.from(new Set([role, ...user.roles.filter((r) => r !== user.role)])) }), `${user.name} is now ${role.toLowerCase()}`, true)}>Save role</Button></>}>
+        footer={<><Button onClick={() => setDialog(null)}>Cancel</Button><Button variant="primary" loading={busy} disabled={role === user.role} onClick={() => void run(() => api.users.update(user.id, { role }), `${user.name} is now ${role.toLowerCase()}`, true)}>Save role</Button></>}>
         <RoleRadioCards value={role} onChange={setRole} name={`role-${user.id}`} />
         {isSelf && role !== 'ADMIN' && <p className="mt-3 text-xs text-warn-ink">You are changing your own role. You may lose access to this page.</p>}
         {error && <p role="alert" className="mt-3 text-xs text-danger-ink">{error}</p>}
       </Dialog>
 
       <ConfirmDialog open={dialog === 'reset'} onClose={() => setDialog(null)} pending={busy} title={`Force password reset for ${user.name}?`} description={`We email ${user.email} a reset link that works for 30 minutes. Their current password keeps working until they use it.`} confirmLabel="Send reset link"
-        onConfirm={() => void run(() => api.users.resetPassword(user.id, 'EMAIL'), `Reset link sent to ${user.email}`)} />
+        onConfirm={() => void run(async () => { await api.users.resetPassword(user.id, 'EMAIL'); }, `Reset link sent to ${user.email}`)} />
 
       <ConfirmDialog open={dialog === 'signout'} onClose={() => setDialog(null)} pending={busy} title={`Sign ${user.name} out everywhere?`} description={`${user.sessions ?? 0} active session${user.sessions === 1 ? '' : 's'} will end. They can sign in again straight away.`} confirmLabel="Sign out everywhere"
         onConfirm={() => void run(() => api.users.revokeSessions(user.id), `${user.name} signed out on every device`)} />

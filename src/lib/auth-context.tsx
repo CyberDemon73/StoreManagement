@@ -28,6 +28,11 @@ interface AuthValue {
 }
 
 const KEY = 'avenue.session';
+
+/** Tell the service worker to drop every per-user cached response (shared tills). */
+function clearSwData() {
+  try { navigator.serviceWorker?.controller?.postMessage({ type: 'CLEAR_DATA' }); } catch { /* no SW */ }
+}
 const AuthContext = createContext<AuthValue | null>(null);
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -80,11 +85,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     can: (p) => PERMISSIONS[role].has(p),
     isManager: role !== 'SELLER',
     login: async (email, password, remember) => {
+      clearSwData();
       const { user } = await api.auth.login(email, password, remember);
       persist({ user, actingRole: user.role, viewAsSeller: false });
       return user;
     },
-    logout: async () => { await api.auth.logout().catch(() => undefined); persist(null); router.replace('/login'); },
+    logout: async () => { await api.auth.logout().catch(() => undefined); clearSwData(); persist(null); router.replace('/login'); },
     setViewAsSeller: (on) => { if (session) persist({ ...session, viewAsSeller: on }); },
     switchRole: (r) => { if (session && session.user.roles.includes(r)) persist({ ...session, actingRole: r, viewAsSeller: false }); },
   }), [session, role, ready, persist, router]);

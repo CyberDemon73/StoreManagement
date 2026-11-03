@@ -5,7 +5,7 @@
  *  - Mutations (POST/PATCH/DELETE) and /analytics: network-only, never cached.
  *  - "SKIP_WAITING" message from the page applies an update (the page shows UpdateAvailableToast).
  */
-const SW_VERSION = 'v1';
+const SW_VERSION = 'v2';
 const SHELL = `avenue-shell-${SW_VERSION}`;
 const DATA = `avenue-data-${SW_VERSION}`;
 const PRECACHE = ['/offline', '/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png'];
@@ -23,7 +23,11 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  if (!event.data) return;
+  if (event.data.type === 'SKIP_WAITING') self.skipWaiting();
+  // Logout / user switch: drop every per-user cached response so a seller cannot read a
+  // manager's cached catalogue (cost / margin) on a shared till.
+  if (event.data.type === 'CLEAR_DATA') event.waitUntil(caches.delete(DATA));
 });
 
 self.addEventListener('fetch', (event) => {
