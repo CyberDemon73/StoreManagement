@@ -80,18 +80,18 @@ Each sprint: ~1 Claude Code session of focused work. Run `/sprint N` (skill incl
 ## Sprint 4 — Analytics
 **Goal:** every report in the spec, fast enough on the free tier.
 
-- [ ] SQL-first analytics in `src/analytics/*.ts` (Drizzle `sql` templates), all accept `{ from, to, tz }`.
-- [ ] `GET /analytics/dashboard` — KPIs (total cash + by method, gross profit, margin %, COGS, units in stock, SKUs in stock, stock value cost/retail, sales count, avg basket, low/out counts). Combine into ≤ 4 queries.
-- [ ] `GET /analytics/sales-trend?interval=day|week|month` (revenue, profit, count; fill empty buckets).
-- [ ] `GET /analytics/brands`, `/categories` (stock units, stock value, revenue, profit).
-- [ ] `GET /analytics/top-products?by=units|revenue&limit`, `/top-variants`.
-- [ ] `GET /analytics/slow-movers?days=` (no sales in N days, qty > 0, value tied up).
-- [ ] `GET /analytics/size-color` (qty on hand matrix).
-- [ ] `GET /analytics/sellers`, `/returns`, `/payment-mix`, `/stock-ageing`, `/price-list`.
-- [ ] `GET /analytics/export?report=` → CSV stream.
-- [ ] Caching: 60-s `Cache-Control: private, max-age=60` + Upstash memo keyed by report+range; invalidate on sale/purchase/adjust.
-- [ ] Indexes: `sales(created_at)`, `sale_items(variant_id)`, `stock_movements(variant_id, created_at)`.
-- [ ] Tests: profit = Σ(price−cost)·qty − refunds; brand split sums equal totals.
+- [x] SQL-first analytics in `src/analytics/*.ts` (Drizzle `sql` templates), all accept `{ from, to, tz }`.
+- [x] `GET /analytics/dashboard` — KPIs (total cash + by method, gross profit, margin %, COGS, units in stock, SKUs in stock, stock value cost/retail, sales count, avg basket, low/out counts). Combine into ≤ 4 queries.
+- [x] `GET /analytics/sales-trend?interval=day|week|month` (revenue, profit, count; fill empty buckets).
+- [x] `GET /analytics/brands`, `/categories` (stock units, stock value, revenue, profit).
+- [x] `GET /analytics/top-products?by=units|revenue&limit`, `/top-variants`.
+- [x] `GET /analytics/slow-movers?days=` (no sales in N days, qty > 0, value tied up).
+- [x] `GET /analytics/size-color` (qty on hand matrix).
+- [x] `GET /analytics/sellers`, `/returns`, `/payment-mix`, `/stock-ageing`, `/price-list`.
+- [x] `GET /analytics/export?report=` → CSV stream.
+- [x] Caching: 60-s `Cache-Control: private, max-age=60` + Upstash memo keyed by report+range; invalidate on sale/purchase/adjust.
+- [x] Indexes: `sales(created_at)`, `sale_items(variant_id)`, `stock_movements(variant_id, created_at)`.
+- [x] Tests: profit = Σ(price−cost)·qty − refunds; brand split sums equal totals.
 
 ---
 

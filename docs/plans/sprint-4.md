@@ -83,8 +83,8 @@ export async function bumpAnalyticsVersion(): Promise<void>
 - R1 on S2, 2026-06-11 15:00 Cairo: C1×1 restock, refund = cumulative rule → round(500×2800/3000)=467, refundMethod CARD.
 Expected for range 06-10..06-11: revenue = 2000 + 2800 + 500 − 467 = 4833; cogs = 800 + 1400 + 200 − 200 = 2200; profit = 2633; salesCount = 3; unitsSold = 2 + 3 + 1 − 1 = 5. Range 06-10..06-10: revenue 4800, cogs 2200, count 2. Export these as `EXPECTED` constants.
 
-- [ ] Step 1 (tests): range — `resolveRange` 400 cases (`to < from`, 400 days, `2026-02-30`); S3 falls on 06-11 (query `saleLines` for 06-10 only → sale ids S1, S2). facts — over 06-10..06-11: Σ revenue − Σ refund = 4833, Σ cost − Σ restocked = 2200; VOID S4 absent. lists — `GET /sales?from=2026-06-11&to=2026-06-11` returns S3 and S4 (not S2). cache — `memo` without Upstash env calls fn every time; version bump is a no-op.
-- [ ] Step 2 RED → Step 3 implement → Step 4 GREEN (full suite: lists still pass) → Step 5 commit `feat(analytics): shared range, sales/return facts, cache, timezone-aware lists (0007 indexes)`
+- [x] Step 1 (tests): range — `resolveRange` 400 cases (`to < from`, 400 days, `2026-02-30`); S3 falls on 06-11 (query `saleLines` for 06-10 only → sale ids S1, S2). facts — over 06-10..06-11: Σ revenue − Σ refund = 4833, Σ cost − Σ restocked = 2200; VOID S4 absent. lists — `GET /sales?from=2026-06-11&to=2026-06-11` returns S3 and S4 (not S2). cache — `memo` without Upstash env calls fn every time; version bump is a no-op.
+- [x] Step 2 RED → Step 3 implement → Step 4 GREEN (full suite: lists still pass) → Step 5 commit `feat(analytics): shared range, sales/return facts, cache, timezone-aware lists (0007 indexes)`
 
 ---
 
@@ -93,32 +93,32 @@ Expected for range 06-10..06-11: revenue = 2000 + 2800 + 500 − 467 = 4833; cog
 **Files:** `src/analytics/{kpis,trend,payment-mix,dashboard}.ts`, routes `analytics/{dashboard,sales-trend,payment-mix}/route.ts`, `src/analytics/registry.ts` (create with these three), tests `tests/analytics/{kpis,trend,payment-mix,dashboard}.test.ts`; manifest.
 
 **Produces:** `kpis(db, r): DashboardKpis` (totalCash = revenue; cashByMethod = sales by method − refunds by refund method; grossProfit; marginPct; cogs; unitsInStock/skusInStock/stockValueCost/stockValueRetail from stock on hand; salesCount (non-VOID sales in range); avgBasket = round(Σ sale totals ÷ salesCount); lowStockCount/outOfStockCount (same rule as /stock/low); deltas vs `previousRange` in percent, one decimal, prev 0 → 0 if cur 0 else 100). `trend(db, r, interval)` → `TrendPoint[]` (revenue/profit/cogs/count per bucket incl. empty). `paymentMix(db, r)` → 4 rows always (count = sales, total = sales − refunds by method). `dashboard(db, r)` → `DashboardData` with trend (day), brandSplit (from Task 3's `brands()` — import lazily; until Task 3 lands use an inline query returning `{id,name,revenue,sharePct}`), topProducts (5 by units), lowStock (6 from `lowStock()` out first), recentSales (6 latest via `loadSalesOut`).
-- [ ] Step 1 (tests, fixture): KPIs 06-10..06-11 revenue 4833, cogs 2200, grossProfit 2633, marginPct 54.5, salesCount 3, avgBasket round(5300/3)=1767, cashByMethod CASH 2500 / CARD 2333; trend day → 06-10 {revenue 4800, cogs 2200, profit 2600, count 2}, 06-11 {revenue 33, cogs 0, profit 33, count 1}; payment mix 4 rows; deltas vs 06-08..06-09 (empty) → 100; SELLER → 403.
-- [ ] RED → GREEN → commit `feat(analytics): dashboard KPIs, sales trend, payment mix`
+- [x] Step 1 (tests, fixture): KPIs 06-10..06-11 revenue 4833, cogs 2200, grossProfit 2633, marginPct 54.5, salesCount 3, avgBasket round(5300/3)=1767, cashByMethod CASH 2500 / CARD 2333; trend day → 06-10 {revenue 4800, cogs 2200, profit 2600, count 2}, 06-11 {revenue 33, cogs 0, profit 33, count 1}; payment mix 4 rows; deltas vs 06-08..06-09 (empty) → 100; SELLER → 403.
+- [x] RED → GREEN → commit `feat(analytics): dashboard KPIs, sales trend, payment mix`
 
 ### Task 3: Brands, categories, top products, top variants, size × colour
 
 **Files:** `src/analytics/{brands,categories,top-products,size-color}.ts`, routes `analytics/{brands,categories,top-products,top-variants,size-color}/route.ts`, register in `registry.ts`, tests.
 **Produces:** brands → rows `{ id, name, unitsInStock, stockValueCost, stockValueRetail, unitsSold, revenue, profit, marginPct, sharePct }` for every active brand (zeros included), sorted by revenue desc; categories → `CategoryStats` (daysOfCover = round(unitsInStock ÷ (unitsSold ÷ days)), 999 when unitsSold ≤ 0); top-products `?by=units|revenue|profit&limit=1..50` → `TopProduct[]`; top-variants same + `variantId, size, color, sku`; size-color `?brandId&from&to` (range optional → last 30 days) → `SizeColorMatrix` with sizes in apparel order then numeric.
-- [ ] Step 1 (tests): brand N revenue = 2000 + round(2000×2800/3000)=1867 → 3867; brand C = round(1000×2800/3000)=933 + 500 − 467 = 966; Σ = 4833 = KPI revenue; category T revenue 4833; top-products by units → PN (3) then PC (2); size-color cells qty/sold.
-- [ ] RED → GREEN → commit `feat(analytics): brand, category, product, variant and size-colour reports`
+- [x] Step 1 (tests): brand N revenue = 2000 + round(2000×2800/3000)=1867 → 3867; brand C = round(1000×2800/3000)=933 + 500 − 467 = 966; Σ = 4833 = KPI revenue; category T revenue 4833; top-products by units → PN (3) then PC (2); size-color cells qty/sold.
+- [x] RED → GREEN → commit `feat(analytics): brand, category, product, variant and size-colour reports`
 
 ### Task 4: Slow movers, stock ageing, sellers, returns, price list
 
 **Files:** `src/analytics/{slow-movers,stock-ageing,sellers,returns,price-list}.ts`, routes, register, tests.
 **Produces:** slow-movers `?days=1..365 (default 60)` → `SlowMover[]` (variants qty>0 of ACTIVE products whose last SALE movement — else first movement — is ≥ days ago; `soldLast90d`; suggestion: >90 'Markdown 20%', >70 'Bundle', >60 'Move to front', else 'Watch'; sorted by valueAtCost desc); stock-ageing → 4 buckets `0-30, 31-60, 61-90, 90+` by days since last INITIAL/PURCHASE movement, `{ bucket, units, valueCost }`; sellers → `SellerStats[]` (discountGiven = Σ discount; discountPct = discount ÷ (revenue+discount) ×100; returns of their sales created in range); returns → `ReturnsReport` (ratePct = returns ÷ sales in range ×100; byReason); price-list `paginationQuery` → `{ data: [{ variantId, productName, brand, sku, size, color, costPrice, sellPrice, marginPct, quantity }], page, pageSize, total }`.
-- [ ] Step 1 (tests): sellers A {salesCount 2, revenue 2500}, B {1, 2800−467=2333, discountGiven 200, returnsCount 1, returnsValue 467}; returns {count 1, value 467, ratePct 33.3}; slow movers with a backdated movement; ageing buckets sum to units in stock; price-list margin.
-- [ ] RED → GREEN → commit `feat(analytics): slow movers, stock ageing, sellers, returns, price list`
+- [x] Step 1 (tests): sellers A {salesCount 2, revenue 2500}, B {1, 2800−467=2333, discountGiven 200, returnsCount 1, returnsValue 467}; returns {count 1, value 467, ratePct 33.3}; slow movers with a backdated movement; ageing buckets sum to units in stock; price-list margin.
+- [x] RED → GREEN → commit `feat(analytics): slow movers, stock ageing, sellers, returns, price list`
 
 ### Task 5: CSV export + caching wiring + indexes check
 
 **Files:** `src/app/api/v1/analytics/export/route.ts`, `src/lib/csv.ts` (`toCsv(rows)` with formula escaping: cells starting with `= + - @ \t \r` prefixed with `'`), tests `tests/analytics/export.test.ts`, `tests/lib/csv.test.ts`; wrap every report route's run in `memo('an:v<version>:<report>:<params>')`.
-- [ ] Step 1 (tests): `?report=payment-mix&from&to` → `text/csv`, header row, 4 data rows; unknown report → 400; formula cell `=SUM(1)` → `'=SUM(1)`; memo: with a fake Upstash seam, second call hits the cache, `bumpAnalyticsVersion` invalidates.
-- [ ] RED → GREEN → commit `feat(analytics): CSV export and report caching`
+- [x] Step 1 (tests): `?report=payment-mix&from&to` → `text/csv`, header row, 4 data rows; unknown report → 400; formula cell `=SUM(1)` → `'=SUM(1)`; memo: with a fake Upstash seam, second call hits the cache, `bumpAnalyticsVersion` invalidates.
+- [x] RED → GREEN → commit `feat(analytics): CSV export and report caching`
 
 ### Task 6: Docs, checklist, verification, review
 
-- [ ] API-SPEC analytics notes (definitions, tz, shapes), DECISIONS, SPRINTS ticks; `pnpm typecheck && lint && test && build && audit`; review; commit `docs: sprint 4`.
+- [x] API-SPEC analytics notes (definitions, tz, shapes), DECISIONS, SPRINTS ticks; `pnpm typecheck && lint && test && build && audit`; review; commit `docs: sprint 4`.
 
 ## Deferred
 - `EXPLAIN ANALYZE` on 10k sales (`scripts/seed-big.ts`) → Sprint 6 performance task.
