@@ -67,6 +67,18 @@ describe('applyMovement', () => {
     const r = await db.transaction((tx) => applyMovement(tx, { variantId, type: 'SALE', qtyDelta: -5, userId: null }));
     expect(r).toMatchObject({ quantity: -3, costPrice: 500 });
   });
+
+  it('rejects a movement that would overflow int4 quantity', async () => {
+    const { db, variantId } = await fixture();
+    await db.transaction((tx) => applyMovement(tx, { variantId, type: 'INITIAL', qtyDelta: 10, unitCost: 500, userId: null }));
+    const err = await db
+      .transaction((tx) => applyMovement(tx, { variantId, type: 'PURCHASE', qtyDelta: 2_147_483_647, unitCost: 500, userId: null }))
+      .catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(AppError);
+    expect((err as AppError).code).toBe('VALIDATION');
+    expect((err as AppError).fields?.qtyDelta).toBe('Out of range');
+    expect((await qty(variantId)).quantity).toBe(10);
+  });
 });
 
 describe('verifyStock', () => {

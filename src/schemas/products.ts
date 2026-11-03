@@ -1,7 +1,9 @@
 import { z } from 'zod';
 import { paginationQuery, uuidSchema } from './common';
 
-export const money = z.number().int().nonnegative();
+export const INT4_MAX = 2_147_483_647;
+export const money = z.number().int().min(0).max(INT4_MAX);
+const qty = z.number().int().nonnegative().max(INT4_MAX);
 
 const upper = (s: string) => s.toUpperCase();
 
@@ -18,7 +20,7 @@ export const variantMatrixBody = z
     sizes: z.array(z.string().trim().min(1).max(20)).min(1).max(30),
     colors: z.array(colorRef).min(1).max(30),
     /** A single quantity for every cell, or a map keyed "<size>|<colorName>". */
-    initialQty: z.union([z.number().int().nonnegative(), z.record(z.string(), z.number().int().nonnegative())]).optional(),
+    initialQty: z.union([qty, z.record(z.string(), qty)]).optional(),
     costPrice: money.optional(),
     sellPrice: money.optional(),
   })
@@ -59,8 +61,8 @@ export const productListQuery = paginationQuery
     size: z.string().trim().max(20).optional(),
     color: z.string().trim().max(30).optional(),
     stock: z.enum(['in', 'low', 'out']).optional(),
-    minPrice: z.coerce.number().int().nonnegative().optional(),
-    maxPrice: z.coerce.number().int().nonnegative().optional(),
+    minPrice: z.coerce.number().int().nonnegative().max(INT4_MAX).optional(),
+    maxPrice: z.coerce.number().int().nonnegative().max(INT4_MAX).optional(),
     status: z.enum(['ACTIVE', 'ARCHIVED', 'ALL']).default('ACTIVE'),
     sort: z.enum(PRODUCT_SORTS).default('-updated'),
   })
@@ -72,7 +74,7 @@ export const variantPatchBody = z
   .object({
     sellPrice: money.optional(),
     costPrice: money.optional(),
-    lowStockThreshold: z.number().int().nonnegative().optional(),
+    lowStockThreshold: qty.optional(),
     barcode: z.string().trim().min(4).max(32).nullable().optional(),
     isActive: z.boolean().optional(),
     sku: z

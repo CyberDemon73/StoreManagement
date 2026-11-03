@@ -149,5 +149,26 @@ describe('GET /products', () => {
     expect(m.body.data.some((p: { marginPct?: number }) => p.marginPct !== undefined)).toBe(true);
     expect((await call(GET, { path: '/api/v1/products' })).status).toBe(401);
   });
-});
 
+  it('reports the real total when the page is past the end', async () => {
+    const { cookie } = await fixture();
+    const r = await list(cookie, '?page=5&pageSize=2');
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ data: [], page: 5, pageSize: 2, total: 3 });
+  });
+
+  it('q does not match an inactive variant SKU', async () => {
+    const { db, coat, cookie } = await fixture();
+    await createVariantDirect(db, { productId: coat.id, size: 'XS', colorName: 'Grey', colorHex: '#888888', sku: 'ZZZ-INACTIVE', sellPrice: 4500, quantity: 5, isActive: false });
+    const r = await list(cookie, '?q=ZZZ-INACTIVE');
+    expect(r.status).toBe(200);
+    expect(r.body.data).toEqual([]);
+  });
+
+  it('stock=in excludes a product with any out-of-stock cell', async () => {
+    const { db, coat, cookie } = await fixture();
+    await createVariantDirect(db, { productId: coat.id, size: 'M', colorName: 'Grey', colorHex: '#888888', sku: 'NO-WOO-M-GREY', sellPrice: 4500, quantity: 0, lowStockThreshold: 0 });
+    expect(names((await list(cookie, '?stock=in')).body)).toEqual([]);
+    expect(names((await list(cookie, '?stock=out')).body)).toContain('Wool Coat');
+  });
+});

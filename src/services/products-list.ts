@@ -54,7 +54,7 @@ export async function listProducts(db: Db, query: ProductListQuery): Promise<Pag
       ),
     );
   }
-  if (stock === 'in') where.push(sql`${agg.totalQty} > 0 and ${agg.lowCount} = 0`);
+  if (stock === 'in') where.push(sql`${agg.totalQty} > 0 and ${agg.lowCount} = 0 and ${agg.outCount} = 0`);
   if (stock === 'low') where.push(sql`${agg.lowCount} > 0`);
   if (stock === 'out') where.push(sql`${agg.outCount} > 0`);
   // Range overlap: the product's [min, max] must intersect the requested [minPrice, maxPrice].
@@ -70,7 +70,7 @@ export async function listProducts(db: Db, query: ProductListQuery): Promise<Pag
           db
             .select({ one: sql`1` })
             .from(variants)
-            .where(and(eq(variants.productId, products.id), sql`(${variants.sku} ilike ${like} escape '\\' or ${variants.barcode} = ${q})`)),
+            .where(and(eq(variants.productId, products.id), eq(variants.isActive, true), sql`(${variants.sku} ilike ${like} escape '\\' or ${variants.barcode} = ${q})`)),
         )})`,
     );
   }
@@ -85,6 +85,7 @@ export async function listProducts(db: Db, query: ProductListQuery): Promise<Pag
   const direction = sort.startsWith('-') ? desc : asc;
   const sortColumn = sortColumns[sort.replace(/^-/, '') as SortKey];
 
+  const whereExpr = where.length ? and(...where) : undefined;
   const rows = await db
     .select({
       product: products,
@@ -105,15 +106,28 @@ export async function listProducts(db: Db, query: ProductListQuery): Promise<Pag
     .innerJoin(brands, eq(brands.id, products.brandId))
     .innerJoin(categories, eq(categories.id, products.categoryId))
     .crossJoinLateral(agg)
-    .where(where.length ? and(...where) : undefined)
+    .where(whereExpr)
     .orderBy(direction(sortColumn), asc(products.id))
     .limit(pageSize)
     .offset((page - 1) * pageSize);
+
+  // Past the last page the window count has no row to ride on — count separately.
+  let total = rows[0]?.total ?? 0;
+  if (rows.length === 0 && page > 1) {
+    const [c] = await db
+      .select({ n: sql<number>`count(*)::int` })
+      .from(products)
+      .innerJoin(brands, eq(brands.id, products.brandId))
+      .innerJoin(categories, eq(categories.id, products.categoryId))
+      .crossJoinLateral(agg)
+      .where(whereExpr);
+    total = c?.n ?? 0;
+  }
 
   return {
     data: rows.map((r) => toProductListItem(r.product, { brand: r.brand, category: r.category }, toAggregates(r.agg))),
     page,
     pageSize,
-    total: rows[0]?.total ?? 0,
+    total,
   };
 }

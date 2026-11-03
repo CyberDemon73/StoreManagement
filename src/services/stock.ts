@@ -43,6 +43,9 @@ export async function applyMovement(tx: Db, input: MovementInput): Promise<Movem
   if (!current) throw new AppError('NOT_FOUND', 'Variant not found');
 
   const newQty = current.quantity + input.qtyDelta;
+  if (newQty > 2_147_483_647) {
+    throw new AppError('VALIDATION', 'Quantity out of range', { fields: { qtyDelta: 'Out of range' } });
+  }
   if (newQty < 0) {
     const [cfg] = await tx.select({ allow: settings.allowNegativeStock }).from(settings).limit(1);
     if (!cfg?.allow) {

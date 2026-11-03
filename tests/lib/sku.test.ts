@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildSku, defaultBaseSku, skuPart } from '@/lib/sku';
-import { productListQuery, variantPatchBody } from '@/schemas/products';
+import { productCreateBody, productListQuery, variantMatrixBody, variantPatchBody } from '@/schemas/products';
 
 describe('sku helpers', () => {
   it('normalises parts to A-Z0-9', () => {
@@ -30,5 +30,18 @@ describe('product schemas', () => {
     expect(variantPatchBody.safeParse({ quantity: 5 }).success).toBe(false);
     expect(variantPatchBody.parse({ sku: 'nl-chi-s-black' })).toEqual({ sku: 'NL-CHI-S-BLACK' });
     expect(variantPatchBody.parse({ barcode: null })).toEqual({ barcode: null });
+  });
+
+  it('rejects values beyond int4 bounds', () => {
+    const base = { name: 'X', brandId: '00000000-0000-4000-8000-000000000000', categoryId: '00000000-0000-4000-8000-000000000000' };
+    expect(productCreateBody.safeParse({ ...base, defaultPrice: 10_000_000_000 }).success).toBe(false);
+    expect(productCreateBody.safeParse({ ...base, defaultPrice: 100 }).success).toBe(true);
+    const m = { sizes: ['S'], colors: [{ name: 'Black', hex: '#000000' }] };
+    expect(variantMatrixBody.safeParse({ ...m, initialQty: 3_000_000_000 }).success).toBe(false);
+    expect(variantMatrixBody.safeParse({ ...m, initialQty: { 'S|Black': 3_000_000_000 } }).success).toBe(false);
+    expect(variantPatchBody.safeParse({ lowStockThreshold: 3_000_000_000 }).success).toBe(false);
+    expect(productListQuery.safeParse({ page: 1_000_000 }).success).toBe(false);
+    expect(productListQuery.safeParse({ minPrice: '3000000000' }).success).toBe(false);
+    expect(productListQuery.safeParse({ maxPrice: '3000000000' }).success).toBe(false);
   });
 });
