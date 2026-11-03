@@ -13,7 +13,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "stock:verify": "node -e \"console.log('stock:verify arrives in Sprint 2')\""
+    "stock:verify": "tsx src/db/verify-stock.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",
