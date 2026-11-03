@@ -6,4 +6,5 @@ allowBuilds:
 # Security overrides (see docs/DECISIONS.md): postcss pinned low by next 15.5; tinypool dev-only via vitest 3.
 overrides:
   postcss: '^8.5.18'
+  zod: '^4.6.6'
   'vitest>tinypool': '^2.1.2'

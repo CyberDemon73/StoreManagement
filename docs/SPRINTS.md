@@ -31,18 +31,18 @@ Each sprint: ~1 Claude Code session of focused work. Run `/sprint N` (skill incl
 ## Sprint 1 — Catalogue: products, variants, brands, categories
 **Goal:** full CRUD + search/filter/pagination.
 
-- [ ] Schema: `brands`, `categories`, `products`, `variants` (+ indexes: `products(name)`, trigram index on `products.name`, `variants(sku) unique`, `variants(barcode) unique nullable`, `variants(product_id)`).
-- [ ] Money as `integer` minor units everywhere; `currency` from settings.
-- [ ] `GET /products` with `q` (name / baseSku / barcode / brand via ILIKE + trigram), filters (brand, category, size, color, stock in/low/out, price range, status), sort whitelist, pagination (max pageSize 100). Response includes aggregated `totalQty`, `variantCount`, `minPrice/maxPrice`.
-- [ ] `POST /products`, `GET /products/:id` (with variants), `PATCH /products/:id`, `POST /products/:id/archive` (soft).
-- [ ] `POST /products/:id/variants` bulk create from `sizes[] × colors[]` with SKU generator `BASE-SIZE-COLOR` and optional initial qty (creates `INITIAL` movements — depends on Sprint 2 ledger; stub as direct insert until then).
-- [ ] `PATCH /variants/:id` (price, cost, threshold, barcode; **never quantity**), `DELETE /variants/:id` (only if qty 0 and no movements).
-- [ ] `GET /variants/lookup?barcode=|sku=`.
-- [ ] Brands / Categories / Suppliers CRUD with product counts; archive instead of delete when referenced.
-- [ ] Seller response serializer strips `costPrice`, `defaultCost`, margin.
-- [ ] Image upload: `POST /uploads` → Vercel Blob (type/size validated, max 5 MB, images only), returns URL.
-- [ ] Seed script: 3 brands, 6 categories, 40 products, ~250 variants.
-- [ ] Tests: filters, pagination bounds, seller stripping, unique SKU.
+- [x] Schema: `brands`, `categories`, `products`, `variants` (+ indexes: `products(name)`, trigram index on `products.name`, `variants(sku) unique`, `variants(barcode) unique nullable`, `variants(product_id)`).
+- [x] Money as `integer` minor units everywhere; `currency` from settings.
+- [x] `GET /products` with `q` (name / baseSku / barcode / brand via ILIKE + trigram), filters (brand, category, size, color, stock in/low/out, price range, status), sort whitelist, pagination (max pageSize 100). Response includes aggregated `totalQty`, `variantCount`, `minPrice/maxPrice`.
+- [x] `POST /products`, `GET /products/:id` (with variants), `PATCH /products/:id`, `POST /products/:id/archive` (soft).
+- [x] `POST /products/:id/variants` bulk create from `sizes[] × colors[]` with SKU generator `BASE-SIZE-COLOR` and optional initial qty (creates `INITIAL` movements through `applyMovement()` — ledger pulled forward into Sprint 1, see DECISIONS).
+- [x] `PATCH /variants/:id` (price, cost, threshold, barcode; **never quantity**), `DELETE /variants/:id` (only if qty 0 and no movements).
+- [x] `GET /variants/lookup?barcode=|sku=`.
+- [x] Brands / Categories / Suppliers CRUD with product counts; archive instead of delete when referenced.
+- [x] Seller response serializer strips `costPrice`, `defaultCost`, margin.
+- [x] Image upload: `POST /uploads` → Vercel Blob (type/size validated, max 5 MB, images only), returns URL.
+- [x] Seed script: 3 brands, 6 categories, 40 products, ~250 variants.
+- [x] Tests: filters, pagination bounds, seller stripping, unique SKU.
 
 ---
 

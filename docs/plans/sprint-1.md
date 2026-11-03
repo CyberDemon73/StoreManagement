@@ -96,11 +96,11 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 - `movementTypeEnum('movement_type', ['INITIAL','PURCHASE','SALE','RETURN','ADJUSTMENT'])`, `referenceKindEnum('reference_kind', ['sale','purchase','return','count'])`; `stockMovements` (id, variantId fk restrict, type, qtyDelta int, unitCost int null, referenceKind null, referenceId uuid null, reason, userId fk set-null, createdAt; indexes (variantId, createdAt desc), (referenceKind, referenceId), (createdAt))
 - `TABLES` in test helper gains `stock_movements, variants, products, suppliers, categories, brands` (before `users`).
 
-- [ ] **Step 1: Failing test**: all six tables select `[]`; inserting two variants with same `(productId,size,colorName)` → pg code `23505`; same `sku` → `23505`; `barcode` null twice allowed; `products.name` trigram index exists (`select indexname from pg_indexes where indexname='products_name_trgm_idx'` → 1 row).
-- [ ] **Step 2: Run** `pnpm vitest run tests/db/catalog-schema` → FAIL (tables missing).
-- [ ] **Step 3: Write schema files; `pnpm db:generate`; read the SQL (no DROPs; enums; GIN index uses `gin_trgm_ops`); add rollback comment line.**
-- [ ] **Step 4: Run** → PASS; `pnpm typecheck`.
-- [ ] **Step 5: Commit** `chore(db): catalog tables, variants and stock_movements ledger (migration 0002)`
+- [x] **Step 1: Failing test**: all six tables select `[]`; inserting two variants with same `(productId,size,colorName)` → pg code `23505`; same `sku` → `23505`; `barcode` null twice allowed; `products.name` trigram index exists (`select indexname from pg_indexes where indexname='products_name_trgm_idx'` → 1 row).
+- [x] **Step 2: Run** `pnpm vitest run tests/db/catalog-schema` → FAIL (tables missing).
+- [x] **Step 3: Write schema files; `pnpm db:generate`; read the SQL (no DROPs; enums; GIN index uses `gin_trgm_ops`); add rollback comment line.**
+- [x] **Step 4: Run** → PASS; `pnpm typecheck`.
+- [x] **Step 5: Commit** `chore(db): catalog tables, variants and stock_movements ledger (migration 0002)`
 
 ---
 
@@ -115,9 +115,9 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 - `verifyStock(db): Promise<{ ok: boolean; mismatches: { variantId; quantity; ledger }[] }>` — compares `variants.quantity` with `Σ qty_delta`.
 - `pnpm stock:verify` prints mismatches, exit 1 if any.
 
-- [ ] **Step 1: Failing tests** (fixture: brand, category, product, variant qty 0 via direct insert in the test helper only): INITIAL +10 @ 500 → quantity 10, costPrice 500, one movement row; PURCHASE +10 @ 700 → costPrice 600; SALE −25 → throws `INSUFFICIENT_STOCK` with `fields[variantId]`, quantity unchanged, no movement row; with `settings.allowNegativeStock=true` → allowed; `verifyStock` ok after the above, and `ok:false` after a test-only direct `UPDATE variants SET quantity = 99`.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement** (`db.transaction(async (tx) => applyMovement(tx, …))` in tests). **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(stock): applyMovement ledger with row lock, negative-stock guard, weighted-average cost; stock:verify`
+- [x] **Step 1: Failing tests** (fixture: brand, category, product, variant qty 0 via direct insert in the test helper only): INITIAL +10 @ 500 → quantity 10, costPrice 500, one movement row; PURCHASE +10 @ 700 → costPrice 600; SALE −25 → throws `INSUFFICIENT_STOCK` with `fields[variantId]`, quantity unchanged, no movement row; with `settings.allowNegativeStock=true` → allowed; `verifyStock` ok after the above, and `ok:false` after a test-only direct `UPDATE variants SET quantity = 99`.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement** (`db.transaction(async (tx) => applyMovement(tx, …))` in tests). **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(stock): applyMovement ledger with row lock, negative-stock guard, weighted-average cost; stock:verify`
 
 ---
 
@@ -134,9 +134,9 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 - `src/serializers/catalog.ts`: pure mappers from DB rows (+ aggregates) to the `*Out` types above; `forRole<T>(value: T, role: Role): T` = `role === 'SELLER' ? stripCostFields(value) : value`. `marginPct` only when `defaultCost` present: `round((defaultPrice - defaultCost) / defaultPrice * 1000) / 10`, `null` when `defaultPrice` is 0. `tint` = first colour hex of the product's variants (by `createdAt`) else `'#E6E3DC'`.
 - `tests/helpers/catalog.ts`: `seedCatalog(db): Promise<{ brand, category, supplier }>`, `createProductDirect(db, { name, baseSku, brandId, categoryId, defaultPrice, defaultCost? })`, `createVariantDirect(db, { productId, size, colorName, colorHex, sku, sellPrice, costPrice?, quantity? })` (test-only insert; quantity here is fixture setup, documented), `expectNoSellerKeys(value: unknown)` (deep scan for `FORBIDDEN_SELLER_KEYS`).
 
-- [ ] **Step 1: Failing tests**: `buildSku('NL-CHI','32 W','Navy Blue') === 'NL-CHI-32W-NAVYBLUE'`; `defaultBaseSku('Northline','Chino Slim') === 'NO-CHI'`; `defaultBaseSku('A','B') === 'AX-BXX'`; `productListQuery` default `{ page:1, pageSize:25, status:'ACTIVE', sort:'-updated' }`, `sort=price-asc` rejected; `variantPatchBody` rejects `{ quantity: 5 }`; serializer: `toVariant(row)` → `color: { name, hex }`, no `colorName`; `forRole(detail, 'SELLER')` passes `expectNoSellerKeys`; `marginPct(1000, 600) === 40`.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(catalog): schemas, SKU helpers, role-aware serializers`
+- [x] **Step 1: Failing tests**: `buildSku('NL-CHI','32 W','Navy Blue') === 'NL-CHI-32W-NAVYBLUE'`; `defaultBaseSku('Northline','Chino Slim') === 'NO-CHI'`; `defaultBaseSku('A','B') === 'AX-BXX'`; `productListQuery` default `{ page:1, pageSize:25, status:'ACTIVE', sort:'-updated' }`, `sort=price-asc` rejected; `variantPatchBody` rejects `{ quantity: 5 }`; serializer: `toVariant(row)` → `color: { name, hex }`, no `colorName`; `forRole(detail, 'SELLER')` passes `expectNoSellerKeys`; `marginPct(1000, 600) === 40`.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(catalog): schemas, SKU helpers, role-aware serializers`
 
 ---
 
@@ -150,9 +150,9 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 - `listBrands(db): Promise<BrandOut[]>` (`productCount` = ACTIVE products, `variantCount`), `createBrand(db, user, input, ctx)`, `patchBrand(db, user, id, patch, ctx)`; same trio for categories (`productCount`) and suppliers (`purchaseCount: 0`, `lastPurchaseAt: null` until Sprint 2). Duplicate name → `CONFLICT` with `fields.name`. Unknown id → `NOT_FOUND`. Category `parentId` must exist and not be itself. Every mutation audits (`brand.create`, `brand.update`, …).
 - Routes: `GET` (`catalog.read`), `POST` (`catalog.write`, 201), `PATCH /:id` (`catalog.write`). Manifest entries with `sampleBody`/`sampleParams` (`{ id: '00000000-0000-4000-8000-000000000001' }`).
 
-- [ ] **Step 1: Failing tests** per entity: MANAGER create → 201 with `isActive:true`; list includes `productCount` (0, then 1 after `createProductDirect`); duplicate name → 409 `fields.name`; PATCH `isActive:false` → brand still returned on `GET /brands` and a product referencing it still loads (Task 5 covers product GET; here assert the brand row keeps its id); SELLER `GET` → 200, SELLER `POST` → 403; unknown id PATCH → 404; extra field → 400; audit row written. Categories: `parentId` self → 400; unknown parent → 404.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement + register 9 routes.** **Step 4: Run** `pnpm vitest run tests/catalog tests/authz` → PASS.
-- [ ] **Step 5: Commit** `feat(catalog): brands, categories, suppliers CRUD with counts`
+- [x] **Step 1: Failing tests** per entity: MANAGER create → 201 with `isActive:true`; list includes `productCount` (0, then 1 after `createProductDirect`); duplicate name → 409 `fields.name`; PATCH `isActive:false` → brand still returned on `GET /brands` and a product referencing it still loads (Task 5 covers product GET; here assert the brand row keeps its id); SELLER `GET` → 200, SELLER `POST` → 403; unknown id PATCH → 404; extra field → 400; audit row written. Categories: `parentId` self → 400; unknown parent → 404.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement + register 9 routes.** **Step 4: Run** `pnpm vitest run tests/catalog tests/authz` → PASS.
+- [x] **Step 5: Commit** `feat(catalog): brands, categories, suppliers CRUD with counts`
 
 ---
 
@@ -169,9 +169,9 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 - `patchProduct(db, user, id, patch, ctx)` (baseSku change does **not** rename variant SKUs; conflict → 409), `setProductStatus(db, user, id, 'ACTIVE'|'ARCHIVED', ctx)`; all audit with before/after.
 - Routes: `POST /products` (`products.write`, 201, `forRole`), `GET /products/:id` (`products.read`, 404 when missing; sellers get stripped), `PATCH /products/:id`, `POST /products/:id/archive|unarchive` (`products.write`).
 
-- [ ] **Step 1: Failing tests**: create with `variants { sizes:['S','M'], colors:[{name:'Black',hex:'#000000'},{name:'Navy Blue',hex:'#1f2a44'}], initialQty: { 'S|Black': 5 }, costPrice: 400 }` → 201; `variants.length === 4`; SKUs include `NO-CHI-S-BLACK` and `NO-CHI-M-NAVYBLUE`; `S|Black` quantity 5 with one INITIAL movement, others 0 and no movement; `tint === '#000000'`; `sizes` `['S','M']`, `colors` 2; default `baseSku` when omitted = `NO-CHI`; supplied `baseSku: 'nl-chi'` stored `NL-CHI`; duplicate baseSku → 409 `fields.baseSku` and `products` count unchanged; unknown `brandId` → 404; SELLER `POST` → 403; `GET /products/:id` as SELLER → 200 and `expectNoSellerKeys(body)` while MANAGER body has `defaultCost` and `variants[0].costPrice`; `marginPct` present for manager; archive → `status:'ARCHIVED'`, unarchive → `ACTIVE`; PATCH `{ name }` audits with `before.name`/`after.name`; PATCH with `variants` key → 400; 404 for a random uuid; malformed id (`/products/abc`) → 400.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement + register.** **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(products): create with size×color matrix and INITIAL movements, detail, patch, archive`
+- [x] **Step 1: Failing tests**: create with `variants { sizes:['S','M'], colors:[{name:'Black',hex:'#000000'},{name:'Navy Blue',hex:'#1f2a44'}], initialQty: { 'S|Black': 5 }, costPrice: 400 }` → 201; `variants.length === 4`; SKUs include `NO-CHI-S-BLACK` and `NO-CHI-M-NAVYBLUE`; `S|Black` quantity 5 with one INITIAL movement, others 0 and no movement; `tint === '#000000'`; `sizes` `['S','M']`, `colors` 2; default `baseSku` when omitted = `NO-CHI`; supplied `baseSku: 'nl-chi'` stored `NL-CHI`; duplicate baseSku → 409 `fields.baseSku` and `products` count unchanged; unknown `brandId` → 404; SELLER `POST` → 403; `GET /products/:id` as SELLER → 200 and `expectNoSellerKeys(body)` while MANAGER body has `defaultCost` and `variants[0].costPrice`; `marginPct` present for manager; archive → `status:'ARCHIVED'`, unarchive → `ACTIVE`; PATCH `{ name }` audits with `before.name`/`after.name`; PATCH with `variants` key → 400; 404 for a random uuid; malformed id (`/products/abc`) → 400.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement + register.** **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(products): create with size×color matrix and INITIAL movements, detail, patch, archive`
 
 ---
 
@@ -184,9 +184,9 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 **Interfaces (Produces):**
 - `listProducts(db, query: ProductListQuery): Promise<Paginated<ProductListItemOut>>` — SQL-first (drizzle `sql` + CTE): products ⋈ brands ⋈ categories, lateral aggregate over **active** variants (`variantCount`, `totalQty`, `lowCount`, `outCount`, `minPrice`/`maxPrice` of `sellPrice` falling back to `defaultPrice` when no variants, `tint` = first colour hex by `createdAt`, `coverImage` = `images[0]`); filters: `status` (`ALL` = no filter), `brandId`, `categoryId`, `size`/`color` (EXISTS on variants, exact match case-insensitive), `stock` (`in`: `totalQty > 0 AND lowCount = 0`; `low`: `lowCount > 0`; `out`: `outCount > 0`), `minPrice`/`maxPrice` against `maxPrice`/`minPrice` overlap; `q`: `name ILIKE %q%` OR `base_sku ILIKE %q%` OR `brand.name ILIKE %q%` OR EXISTS variant (`sku ILIKE %q%` OR `barcode = q`), with `%`/`_` in `q` escaped; sort map `name→name`, `updated→updated_at`, `price→min_price`, `qty→total_qty`, secondary `id`; `total` via `count(*) over()`.
 
-- [ ] **Step 1: Failing tests** (fixture: 3 products, variants with qtys 0/2/50, thresholds 3, two brands): default list returns ACTIVE only, newest-updated first, `page 1 pageSize 25 total 3`; `q=chi` matches name; `q=<sku>` matches by variant SKU; `q=<barcode>` exact; `q=' OR 1=1 --` → 200 empty; `q=%` → 200 and **not** everything (escaped); `q` 10 KB → 400; `stock=out` returns the qty-0 product only; `stock=low` the qty-2 one; `sort=price` ascending by `minPrice`, `sort=-qty` descending; `brandId` filter; `status=ARCHIVED`/`ALL`; `pageSize=2&page=2` → 1 row, `total 3`; `pageSize=500` → 400; SELLER list → `expectNoSellerKeys` and no `marginPct`; MANAGER row has `marginPct`.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement + register GET.** **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(products): list with search, filters, sort whitelist and pagination`
+- [x] **Step 1: Failing tests** (fixture: 3 products, variants with qtys 0/2/50, thresholds 3, two brands): default list returns ACTIVE only, newest-updated first, `page 1 pageSize 25 total 3`; `q=chi` matches name; `q=<sku>` matches by variant SKU; `q=<barcode>` exact; `q=' OR 1=1 --` → 200 empty; `q=%` → 200 and **not** everything (escaped); `q` 10 KB → 400; `stock=out` returns the qty-0 product only; `stock=low` the qty-2 one; `sort=price` ascending by `minPrice`, `sort=-qty` descending; `brandId` filter; `status=ARCHIVED`/`ALL`; `pageSize=2&page=2` → 1 row, `total 3`; `pageSize=500` → 400; SELLER list → `expectNoSellerKeys` and no `marginPct`; MANAGER row has `marginPct`.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement + register GET.** **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(products): list with search, filters, sort whitelist and pagination`
 
 ---
 
@@ -202,9 +202,9 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 - `lookupVariant(db, { barcode?, sku? }): Promise<VariantWithProductOut | null>` (sku case-insensitive); `searchVariants(db, q, limit): Promise<VariantWithProductOut[]>` over ACTIVE products: `sku ILIKE %q%` OR `barcode = q` OR `product.name ILIKE %q%`, ordered by sku.
 - Routes: `GET/POST /products/:id/variants` (`products.read` / `variants.write`), `PATCH/DELETE /variants/:id` (`variants.write`; DELETE → 204), `GET /variants/lookup` (`products.read`; 404 when none), `GET /variants/search` (`products.read`).
 
-- [ ] **Step 1: Failing tests**: POST matrix on existing product with one overlapping cell → returns only new cells, no duplicate SKU error; `initialQty: 3` (number) applies to every new cell with INITIAL movements; PATCH `sellPrice` → 200 and audit; PATCH `{ quantity: 9 }` → 400; PATCH duplicate `barcode` → 409 `fields.barcode`; DELETE with qty 0 and no movements → 204 and row gone; DELETE after an INITIAL movement → 409; lookup by `sku` lower-case → 200 `product.brandName` present; lookup unknown → 404; lookup with neither param → 400; search `q` by product name returns `VariantWithProduct[]` ≤ `limit`; SELLER lookup/search → `expectNoSellerKeys`; SELLER PATCH → 403.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement + register + API-SPEC line.** **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(variants): matrix add, patch (no quantity), delete guard, lookup and search`
+- [x] **Step 1: Failing tests**: POST matrix on existing product with one overlapping cell → returns only new cells, no duplicate SKU error; `initialQty: 3` (number) applies to every new cell with INITIAL movements; PATCH `sellPrice` → 200 and audit; PATCH `{ quantity: 9 }` → 400; PATCH duplicate `barcode` → 409 `fields.barcode`; DELETE with qty 0 and no movements → 204 and row gone; DELETE after an INITIAL movement → 409; lookup by `sku` lower-case → 200 `product.brandName` present; lookup unknown → 404; lookup with neither param → 400; search `q` by product name returns `VariantWithProduct[]` ≤ `limit`; SELLER lookup/search → `expectNoSellerKeys`; SELLER PATCH → 403.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement + register + API-SPEC line.** **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(variants): matrix add, patch (no quantity), delete guard, lookup and search`
 
 ---
 
@@ -219,9 +219,9 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 - `storeImage(user, file: { bytes: Buffer; declaredType: string; size: number }): Promise<{ url: string }>` — `size > 5_242_880` → `AppError VALIDATION status 413`; `sharp(bytes).metadata()` format ∉ {jpeg,png,webp} (or throws) → `VALIDATION 'Unsupported image'`; re-encode with `sharp(bytes).rotate()` to the same format (jpeg quality 85 / png / webp quality 85); name `products/${crypto.randomUUID()}.${ext}`; audit `upload.create` with `{ url, bytes }`.
 - Route: `withAuth({ permission: 'products.write' })`, `const form = await req.formData(); const file = form.get('file')` must be a `File` → else 400; returns 201 `{ url }`. Manifest `sampleBody` unsupported for multipart: add `sampleRequest?: () => Request` support in `RouteSpec`/matrix (`call` accepts a prebuilt body) — simplest: `RouteSpec.sampleForm?: () => FormData` and `tests/helpers/http.ts` `call({ form })` sends it without JSON content-type.
 
-- [ ] **Step 1: Failing tests** (generate images with `sharp({ create: { width: 2, height: 2, channels: 3, background: '#ff0000' } }).png().toBuffer()`): PNG upload as MANAGER → 201 `{ url }` matching `/^https:\/\/.+\/products\/[0-9a-f-]{36}\.png$/`, captured blob `contentType 'image/png'`, bytes differ from input (re-encoded) and `sharp(captured).metadata()` has no `exif`; JPEG with EXIF (`.jpeg().withMetadata({ exif: … })`) → stored without exif; a text file named `evil.jpg` → 400 `Unsupported image`; 6 MB buffer → 413; no `file` field → 400; SELLER → 403; anonymous → 401.
-- [ ] **Step 2: Run** → FAIL. **Step 3: `pnpm add @vercel/blob sharp`; implement; register.** **Step 4: Run** → PASS; `pnpm build` (sharp external: add to `serverExternalPackages`).
-- [ ] **Step 5: Commit** `feat(uploads): image upload with magic-byte check, re-encode and Vercel Blob`
+- [x] **Step 1: Failing tests** (generate images with `sharp({ create: { width: 2, height: 2, channels: 3, background: '#ff0000' } }).png().toBuffer()`): PNG upload as MANAGER → 201 `{ url }` matching `/^https:\/\/.+\/products\/[0-9a-f-]{36}\.png$/`, captured blob `contentType 'image/png'`, bytes differ from input (re-encoded) and `sharp(captured).metadata()` has no `exif`; JPEG with EXIF (`.jpeg().withMetadata({ exif: … })`) → stored without exif; a text file named `evil.jpg` → 400 `Unsupported image`; 6 MB buffer → 413; no `file` field → 400; SELLER → 403; anonymous → 401.
+- [x] **Step 2: Run** → FAIL. **Step 3: `pnpm add @vercel/blob sharp`; implement; register.** **Step 4: Run** → PASS; `pnpm build` (sharp external: add to `serverExternalPackages`).
+- [x] **Step 5: Commit** `feat(uploads): image upload with magic-byte check, re-encode and Vercel Blob`
 
 ---
 
@@ -234,9 +234,9 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 - `seed(db, opts?: { userId?: string | null }): Promise<{ brands; categories; products; variants; movements }>` — idempotent (skips when any brand exists); deterministic PRNG (mulberry32, seed 42); 3 brands (`Northline`, `Casa Lino`, `Verano`), 6 categories (`Tops`, `Bottoms`, `Dresses`, `Outerwear`, `Shoes`, `Accessories`), 2 suppliers, 40 products (names from a fixed list), sizes per category (`XS..XL` / `28..36` / `38..45` shoes / `ONE` accessories), 2–3 colours from a fixed palette → ~250 variants; each gets an INITIAL movement of 0–40 units at a cost 55–70 % of price via `applyMovement`; ~8 % left at 0; settings row ensured.
 - CLI (`pnpm db:seed`) unchanged entry.
 
-- [ ] **Step 1: Failing test**: `seed(db)` → counts `brands 3, categories 6, products 40, variants between 200 and 320`; `verifyStock(db).ok === true`; second `seed(db)` makes no change; every variant's `sku` matches `/^[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+$/` or `/^[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+$/`.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS (note runtime; PGlite + ~250 movements should stay < 15 s).
-- [ ] **Step 5: Commit** `feat(db): deterministic catalogue seed with INITIAL movements`
+- [x] **Step 1: Failing test**: `seed(db)` → counts `brands 3, categories 6, products 40, variants between 200 and 320`; `verifyStock(db).ok === true`; second `seed(db)` makes no change; every variant's `sku` matches `/^[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+$/` or `/^[A-Z0-9]+-[A-Z0-9]+-[A-Z0-9]+$/`.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS (note runtime; PGlite + ~250 movements should stay < 15 s).
+- [x] **Step 5: Commit** `feat(db): deterministic catalogue seed with INITIAL movements`
 
 ---
 
@@ -245,10 +245,10 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 **Files:**
 - Modify: `docs/SPRINTS.md` (tick Sprint 1 boxes, note the pulled-forward ledger on the initial-qty line), `docs/DECISIONS.md` (ledger pulled forward; shapes follow `src/types.ts`; SKU rule; `variants/search`; sharp/blob seam; `created_by` nullable), `docs/API-SPEC.md` (response-shape notes: `color` object, list aggregates, `tint`), `docs/DATA-MODEL.md` (stock_movements now live), `README.md` (BLOB token row → "Sprint 1: required for uploads"), `.env.example`.
 
-- [ ] **Step 1: Docs edits.**
-- [ ] **Step 2: Verify** `pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm audit --audit-level=high` — paste output.
-- [ ] **Step 3: Tick checkboxes; commit** `docs: sprint 1 checklist, decisions, API shape notes`
-- [ ] **Step 4: `/security-review`** (A1 matrix, A2 seller-stripping across all read routes, C3 fuzz `q`, C4 uploads, E1 `grep -rn "set({ quantity" src/` → only `services/stock.ts`, E2 `pnpm stock:verify` on seed).
+- [x] **Step 1: Docs edits.**
+- [x] **Step 2: Verify** `pnpm typecheck && pnpm lint && pnpm test && pnpm build && pnpm audit --audit-level=high` — paste output.
+- [x] **Step 3: Tick checkboxes; commit** `docs: sprint 1 checklist, decisions, API shape notes`
+- [x] **Step 4: `/security-review`** (A1 matrix, A2 seller-stripping across all read routes, C3 fuzz `q`, C4 uploads, E1 `grep -rn "set({ quantity" src/` → only `services/stock.ts`, E2 `pnpm stock:verify` on seed).
 
 ## Deferred
 - `GET /labels`, CSV import/export (Sprint 6); purchases/adjustments/counts (Sprint 2); `soldLast30d` real value (Sprint 3).
