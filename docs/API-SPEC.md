@@ -51,9 +51,11 @@ Conventions
 | GET | /stock/purchases, /stock/purchases/:id | stock.receive | |
 | GET | /stock/low | stock.read | `{ low: [...], out: [...] }` grouped by product |
 | POST | /stock/counts | stock.count.manage | starts a session (snapshots system qty for active variants or `?productIds=`) |
+| GET | /stock/counts | stock.count.read | 20 most recent sessions, newest first, each with items |
 | GET | /stock/counts/:id | stock.count.read | items + variance |
 | PATCH | /stock/counts/:id | stock.count.read | `{ items: [{ variantId, countedQty }] }` (sellers may count) |
 | POST | /stock/counts/:id/apply | stock.count.manage | creates ADJUSTMENT movements, status APPLIED |
+| POST | /stock/counts/:id/cancel | stock.count.manage | OPEN → CANCELLED; apply/patch afterwards → 409 |
 | GET | /labels | products.write | `?variantIds=a,b,c` → label data |
 
 ## Sales
