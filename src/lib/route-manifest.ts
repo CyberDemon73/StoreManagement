@@ -109,6 +109,22 @@ export const ROUTES: RouteSpec[] = [
   },
   // --- products ---
   { method: 'GET', path: '/products', access: 'products.read', load: () => import('@/app/api/v1/products/route') },
+  { method: 'GET', path: '/products/export', access: 'export.csv', load: () => import('@/app/api/v1/products/export/route') },
+  {
+    method: 'POST',
+    path: '/products/import',
+    access: 'export.csv',
+    load: () => import('@/app/api/v1/products/import/route'),
+    sampleForm: () => {
+      const f = new FormData();
+      f.append('file', new Blob(['name,brand,category,size,color,price\n'], { type: 'text/csv' }), 'p.csv');
+      return f;
+    },
+  },
+  { method: 'GET', path: '/labels', access: 'products.write', load: () => import('@/app/api/v1/labels/route') },
+  { method: 'GET', path: '/data/export', access: 'data.export.all', load: () => import('@/app/api/v1/data/export/route') },
+  // Public to the session layer; the handler requires Bearer CRON_SECRET.
+  { method: 'GET', path: '/cron/daily', access: 'public', load: () => import('@/app/api/v1/cron/daily/route') },
   {
     method: 'POST',
     path: '/products',

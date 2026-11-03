@@ -20,7 +20,8 @@ Conventions
 | PATCH | /me | auth | `{ name }` | `{ user }` |
 | POST | /me/password | auth | `{ current, next }` — throttled 5 / 15 min per user | 204 + new session cookie (revokes every other session and outstanding reset links; clears `mustChangePassword`) |
 | POST | /auth/accept-invite | public (IP-limited) | `{ token, password }` — invite token 48 h, single use | 200 `{ user }` + session cookie; 400 invalid/expired/used |
-| GET | /health | public | — | `{ ok, db }` |
+| GET | /health | public | — | `{ ok, db: 'up' }`; 503 `{ ok: false, db: 'down' }` |
+| GET | /cron/daily | Bearer `CRON_SECRET` (else 401) | — | `{ purged, weekly, stockVerify?, backup? }`; Vercel Cron `0 2 * * *` |
 
 ## Catalog
 | Method | Path | Perm | Notes |
@@ -40,8 +41,8 @@ Conventions
 | GET/POST/PATCH | /categories, /categories/:id | catalog.read / catalog.write | `{ name, parentId? }` |
 | GET/POST/PATCH | /suppliers, /suppliers/:id | catalog.read / catalog.write | |
 | POST | /uploads | products.write | multipart image ≤ 4 MB (Vercel request bodies are capped at 4.5 MB) → `{ url }` |
-| POST | /products/import | export.csv | multipart CSV, `?dryRun=1` → `{ rows, errors[] }` |
-| GET | /products/export | export.csv | CSV stream |
+| POST | /products/import | export.csv | multipart field `file` (CSV ≤ 2 MB, ≤ 5,000 rows; columns `name, brand, category, size, color, colorHex?, price, cost?, qty?, barcode?`, unknown columns ignored; row 2 = first data row). `?dryRun=1` → 200 `{ rows, ok, errors: [{ row, message, data }] }`, no writes. Without dryRun: all-or-nothing → 201 `{ rows, ok, errors: [], created: { products, variants } }`, or 400 `{ error, rows, ok, errors }` writing nothing. Opening qty booked as INITIAL movements |
+| GET | /products/export | export.csv | `text/csv` (BOM, formula-neutralised), one row per active variant: import columns + `sku`; re-imports unchanged |
 
 ## Stock
 | Method | Path | Perm | Notes |
@@ -57,7 +58,7 @@ Conventions
 | PATCH | /stock/counts/:id | stock.count.read | `{ items: [{ variantId, countedQty }] }` (sellers may count) |
 | POST | /stock/counts/:id/apply | stock.count.manage | creates ADJUSTMENT movements, status APPLIED |
 | POST | /stock/counts/:id/cancel | stock.count.manage | OPEN → CANCELLED; apply/patch afterwards → 409 |
-| GET | /labels | products.write | `?variantIds=a,b,c` → label data |
+| GET | /labels | products.write | `?variantIds=a,b,c` (1–200 uuids) → `VariantWithProduct[]` in request order, unknown ids omitted, never cost |
 
 ## Sales
 | Method | Path | Perm | Notes |
@@ -103,4 +104,4 @@ Conventions
 | POST | /notifications/:id/read | auth | and `/notifications/read-all`; 204; another user's id → 404 |
 
 A user with `mustChangePassword` gets 403 `FORBIDDEN` `fields.password = 'Password change required'` on every authenticated route except `GET /auth/me`, `POST /auth/logout`, `POST /me/password`. Login of an INVITED user → 403 `Invitation not accepted`.
-| GET | /data/export | export.csv (ADMIN) | zip of CSVs |
+| GET | /data/export | data.export.all (ADMIN) | `application/zip`, one CSV per table; no sessions, tokens, idempotency keys, failed logins, known devices or password hashes. Audited |
