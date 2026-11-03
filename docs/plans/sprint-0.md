@@ -89,32 +89,32 @@ export type Db = PgDatabase<PgQueryResultHKT, typeof schema>;
 **Interfaces:**
 - Produces: scripts `dev build start lint typecheck test test:watch db:generate db:migrate db:seed stock:verify`; alias `@/*`.
 
-- [ ] **Step 1: Enable pnpm and scaffold into a temp dir**
+- [x] **Step 1: Enable pnpm and scaffold into a temp dir**
 
 Run (in scratchpad dir): `corepack enable pnpm && pnpm dlx create-next-app@15 avenue-tmp --ts --tailwind --eslint --app --src-dir --import-alias "@/*" --use-pnpm --turbopack --yes`
 Then copy everything except `README.md` and `.gitignore` from `avenue-tmp` into the project root; append new `.gitignore` lines not already present.
 
-- [ ] **Step 2: Install dependencies**
+- [x] **Step 2: Install dependencies**
 
 Run: `pnpm add drizzle-orm @neondatabase/serverless zod @node-rs/argon2 @upstash/ratelimit @upstash/redis pino resend ws` and `pnpm add -D drizzle-kit @electric-sql/pglite vitest @vitest/coverage-v8 tsx dotenv pino-pretty @types/ws`
 Expected: `pnpm-lock.yaml` updated, no peer errors.
 
-- [ ] **Step 3: Configure TypeScript strict and scripts**
+- [x] **Step 3: Configure TypeScript strict and scripts**
 
 `tsconfig.json`: `strict: true`, `noUncheckedIndexedAccess: true`, `resolveJsonModule: true`, `paths: {"@/*": ["./src/*"]}`.
 `package.json` scripts: `typecheck: tsc --noEmit`, `test: vitest run`, `test:watch: vitest`, `db:generate: drizzle-kit generate`, `db:migrate: tsx src/db/migrate.ts`, `db:seed: tsx src/db/seed.ts`, `stock:verify: echo "stock:verify arrives in Sprint 2"` (placeholder, exits 0).
 `vitest.config.ts`: `environment: 'node'`, `setupFiles: ['tests/setup.ts']`, `alias { '@': './src' }`, `include: ['tests/**/*.test.ts']`, `testTimeout: 20000`.
 
-- [ ] **Step 4: Write the smoke test**
+- [x] **Step 4: Write the smoke test**
 
 `tests/smoke.test.ts`: `it('runs', () => expect(1 + 1).toBe(2))`. `tests/setup.ts`: empty for now (grows in Task 4).
 
-- [ ] **Step 5: Verify**
+- [x] **Step 5: Verify**
 
 Run: `pnpm typecheck && pnpm lint && pnpm test && pnpm build`
 Expected: all exit 0; vitest `1 passed`.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add -A && git commit -m "chore: scaffold Next.js 15 app with strict TS, Tailwind, Vitest, Drizzle deps"
@@ -141,7 +141,7 @@ git add -A && git commit -m "chore: scaffold Next.js 15 app with strict TS, Tail
   - `logger` (pino; level from env; `redact: ['password','token','*.password','*.token','req.headers.cookie']`).
   - `src/schemas/common.ts`: `uuidSchema = z.string().uuid()`, `emailSchema = z.string().trim().toLowerCase().email().max(254)`, `paginationQuery = z.object({ page: z.coerce.number().int().min(1).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(25) }).strict()`.
 
-- [ ] **Step 1: Write failing tests**
+- [x] **Step 1: Write failing tests**
 
 `tests/lib/errors.test.ts`:
 - `AppError('LOCKED', 'x', { retryAfter: 30 })` → `errorResponse` status 423, header `Retry-After: 30`, body `error.code === 'LOCKED'`, `error.retryAfter === 30`.
@@ -154,17 +154,17 @@ git add -A && git commit -m "chore: scaffold Next.js 15 app with strict TS, Tail
 - `content-length` 2,000,000 → AppError with status 413.
 - URLSearchParams `?page=2` against `paginationQuery` → `{ page: 2, pageSize: 25 }`.
 
-- [ ] **Step 2: Run to verify fail**
+- [x] **Step 2: Run to verify fail**
 
 Run: `pnpm test tests/lib`  Expected: FAIL (modules not found).
 
-- [ ] **Step 3: Implement the five lib files and `schemas/common.ts` per Interfaces**
+- [x] **Step 3: Implement the five lib files and `schemas/common.ts` per Interfaces**
 
-- [ ] **Step 4: Run tests**
+- [x] **Step 4: Run tests**
 
 Run: `pnpm test tests/lib`  Expected: PASS.
 
-- [ ] **Step 5: Commit** `feat(lib): error envelope, http helpers, env, logger, zod parse`
+- [x] **Step 5: Commit** `feat(lib): error envelope, http helpers, env, logger, zod parse`
 
 ---
 
@@ -177,11 +177,11 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 **Interfaces:**
 - Produces: `Role`, `Permission` (exactly the 25 keys in `docs/ACCESS-MATRIX.md`), `ROLES: readonly Role[]`, `ALL_PERMISSIONS: readonly Permission[]`, `PERMISSIONS: Record<Role, ReadonlySet<Permission>>`, `can(user: { role: Role }, permission: Permission): boolean`, `permissionsFor(role: Role): Permission[]`.
 
-- [ ] **Step 1: Failing test** — asserts: ADMIN has all 25; MANAGER has all except `data.export.all`; SELLER has exactly `products.read, catalog.read, stock.read, stock.count.read, sales.create, sales.read, returns.create`; `can({role:'SELLER'}, 'analytics.read') === false`; `ALL_PERMISSIONS.length === 25`.
-- [ ] **Step 2: Run** `pnpm test permissions` → FAIL.
-- [ ] **Step 3: Implement** (SELLER's `own` rows count as having the permission; ownership is enforced in services).
-- [ ] **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(auth): permission map from access matrix`
+- [x] **Step 1: Failing test** — asserts: ADMIN has all 25; MANAGER has all except `data.export.all`; SELLER has exactly `products.read, catalog.read, stock.read, stock.count.read, sales.create, sales.read, returns.create`; `can({role:'SELLER'}, 'analytics.read') === false`; `ALL_PERMISSIONS.length === 25`.
+- [x] **Step 2: Run** `pnpm test permissions` → FAIL.
+- [x] **Step 3: Implement** (SELLER's `own` rows count as having the permission; ownership is enforced in services).
+- [x] **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(auth): permission map from access matrix`
 
 ---
 
@@ -205,14 +205,14 @@ Run: `pnpm test tests/lib`  Expected: PASS.
   - `tests/helpers/db.ts`: `createTestDb(): Promise<{ db: Db; close(): Promise<void> }>` (PGlite with `citext` + `pg_trgm` extensions, `migrate(db, { migrationsFolder: 'drizzle' })`), `truncateAll(db)`.
   - `tests/setup.ts`: sets `process.env` (`NODE_ENV=test`, `APP_URL=http://localhost:3000`, `SETUP_TOKEN=test-setup-token`, `SESSION_SECRET=...`), `beforeAll` creates test db + `setDb`, `beforeEach` `truncateAll`, `afterAll` close. Exports nothing; tests call `getDb()`.
 
-- [ ] **Step 1: Update `docs/DATA-MODEL.md`** (two lines noted above). Run `/db-migration` conventions.
-- [ ] **Step 2: Failing test** `tests/db/schema.test.ts`: after setup, `select` from `users`, `sessions`, `password_reset_tokens`, `failed_logins`, `settings`, `audit_log` each returns `[]`; inserting `a@x.com` then `A@X.COM` into users throws unique violation (citext); `settings` insert with id 2 throws check violation.
-- [ ] **Step 3: Run** → FAIL.
-- [ ] **Step 4: Write schema files + `drizzle.config.ts`** (`dialect: 'postgresql'`, `schema: './src/db/schema/index.ts'`, `out: './drizzle'`, `dbCredentials.url = DATABASE_URL_UNPOOLED ?? DATABASE_URL`, `casing: 'snake_case'`).
-- [ ] **Step 5: Generate migrations**: `pnpm drizzle-kit generate --custom --name=extensions` → edit SQL to `CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pg_trgm;`; then `pnpm db:generate` → read the generated SQL fully (no DROPs; enums created; check constraint present).
-- [ ] **Step 6: Write `client.ts`, `migrate.ts` (neon-serverless migrator on `DATABASE_URL_UNPOOLED`, loads `.env` via dotenv), `seed.ts` (idempotent: insert settings row id=1 if missing), test helpers, setup.**
-- [ ] **Step 7: Run** `pnpm test tests/db` → PASS. Also `pnpm typecheck`.
-- [ ] **Step 8: Commit** `chore(db): schema v1 (users, sessions, reset tokens, failed logins, settings, audit) + migrations`
+- [x] **Step 1: Update `docs/DATA-MODEL.md`** (two lines noted above). Run `/db-migration` conventions.
+- [x] **Step 2: Failing test** `tests/db/schema.test.ts`: after setup, `select` from `users`, `sessions`, `password_reset_tokens`, `failed_logins`, `settings`, `audit_log` each returns `[]`; inserting `a@x.com` then `A@X.COM` into users throws unique violation (citext); `settings` insert with id 2 throws check violation.
+- [x] **Step 3: Run** → FAIL.
+- [x] **Step 4: Write schema files + `drizzle.config.ts`** (`dialect: 'postgresql'`, `schema: './src/db/schema/index.ts'`, `out: './drizzle'`, `dbCredentials.url = DATABASE_URL_UNPOOLED ?? DATABASE_URL`, `casing: 'snake_case'`).
+- [x] **Step 5: Generate migrations**: `pnpm drizzle-kit generate --custom --name=extensions` → edit SQL to `CREATE EXTENSION IF NOT EXISTS citext; CREATE EXTENSION IF NOT EXISTS pg_trgm;`; then `pnpm db:generate` → read the generated SQL fully (no DROPs; enums created; check constraint present).
+- [x] **Step 6: Write `client.ts`, `migrate.ts` (neon-serverless migrator on `DATABASE_URL_UNPOOLED`, loads `.env` via dotenv), `seed.ts` (idempotent: insert settings row id=1 if missing), test helpers, setup.**
+- [x] **Step 7: Run** `pnpm test tests/db` → PASS. Also `pnpm typecheck`.
+- [x] **Step 8: Commit** `chore(db): schema v1 (users, sessions, reset tokens, failed logins, settings, audit) + migrations`
 
 ---
 
@@ -226,9 +226,9 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 - Produces: `hashPassword(pw: string): Promise<string>` (argon2id, m=65536, t=3, p=1), `verifyPassword(hash: string, pw: string): Promise<boolean>`, `getDummyHash(): Promise<string>` (cached hash of a random string), `isCommonPassword(pw: string): boolean` (case-insensitive, Set of 10k), `passwordSchema = z.string().min(10).max(128).refine(p => !isCommonPassword(p), { message: 'Password is too common' })`.
 - Common list: SecLists `10-million-password-list-top-10000.txt` (MIT) converted to a JSON array; fetch via `curl` from `https://raw.githubusercontent.com/danielmiessler/SecLists/master/Passwords/Common-Credentials/10-million-password-list-top-10000.txt`.
 
-- [ ] **Step 1: Failing test**: hash starts with `$argon2id$` and contains `m=65536,t=3,p=1`; verify true/false; `isCommonPassword('password123')` true, `'Zq9!vt-plume-orbit'` false; `passwordSchema.safeParse('123456789')` fails (<10), `'password1234'` fails (common), 129-char fails.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Fetch list, write files.** **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(auth): argon2id hashing and common-password rejection`
+- [x] **Step 1: Failing test**: hash starts with `$argon2id$` and contains `m=65536,t=3,p=1`; verify true/false; `isCommonPassword('password123')` true, `'Zq9!vt-plume-orbit'` false; `passwordSchema.safeParse('123456789')` fails (<10), `'password1234'` fails (common), 129-char fails.
+- [x] **Step 2: Run** → FAIL. **Step 3: Fetch list, write files.** **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(auth): argon2id hashing and common-password rejection`
 
 ---
 
@@ -241,9 +241,9 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 **Interfaces:**
 - Produces: `interface Limiter { limit(key: string): Promise<{ success: boolean; remaining: number; reset: number }> }` (reset = epoch ms); `createLimiter(name: string, tokens: number, windowMs: number): Limiter` (Upstash sliding window when env has both Upstash vars, else in-memory sliding window keyed `${name}:${key}`); `enforce(limiter: Limiter, key: string): Promise<void>` throws `AppError('RATE_LIMITED', 'Too many requests', { retryAfter: ceil((reset-now)/1000) })`; exported singletons `loginIpLimiter` (5, 60_000), `loginEmailLimiter` (10, 3_600_000), `forgotEmailLimiter` (3, 3_600_000), `apiUserLimiter` (120, 60_000); `resetMemoryLimiters()`.
 
-- [ ] **Step 1: Failing test**: `createLimiter('t', 2, 1000)`: 3rd call `success === false`; `enforce` throws RATE_LIMITED with `retryAfter >= 1`; keys isolated; after `vi.useFakeTimers` + advance 1001 ms, succeeds again.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(security): rate limiter (Upstash or in-memory)`
+- [x] **Step 1: Failing test**: `createLimiter('t', 2, 1000)`: 3rd call `success === false`; `enforce` throws RATE_LIMITED with `retryAfter >= 1`; keys isolated; after `vi.useFakeTimers` + advance 1001 ms, succeeds again.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(security): rate limiter (Upstash or in-memory)`
 
 ---
 
@@ -267,15 +267,15 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 - `tests/helpers/users.ts`: `createUser(db, { role, email?, password?, name?, status? }): Promise<{ id, email, password }>` (default password `Correct-Horse-Battery-9`), `sessionCookieFor(db, userId): Promise<string>` (creates session, returns `Cookie` header value).
 - `tests/helpers/http.ts`: `call(handler: RouteHandler, opts: { method?, path?, body?, cookie?, headers?, params? }): Promise<Response>` — builds `Request` at `http://localhost:3000<path>` with `Origin: http://localhost:3000`, `X-Requested-With: AvenueStock`, JSON body; `readCookie(res, name): string | null` from `set-cookie`.
 
-- [ ] **Step 1: Failing tests** (`tests/lib/auth.test.ts`):
+- [x] **Step 1: Failing tests** (`tests/lib/auth.test.ts`):
   - `createSession` stores `hashToken(raw)` as `sessions.id`, never the raw value.
   - `getSessionUser` returns user for valid cookie; null for random token; null when `expiresAt` set in the past; null when `idleExpiresAt` in the past; null when user `DISABLED`.
   - cookie header string matches `/^__Host-as_session=[A-Za-z0-9_-]+; Path=\/; HttpOnly; Secure; SameSite=Lax$/` when `remember:false`, includes `Max-Age=` when true.
   - `withAuth({ permission: 'analytics.read' })`: no cookie → 401 envelope; SELLER → 403; MANAGER → 200; response has `X-Request-Id`; handler throwing `new Error('x')` → 500 INTERNAL.
   - `withAuth({ public: true })` → 200 with no cookie.
   - `stripCostFields({ a: { costPrice: 1, items: [{ profit: 2, name: 'n' }] } })` → no forbidden keys at any depth.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS; `pnpm typecheck`.
-- [ ] **Step 5: Commit** `feat(auth): DB sessions, __Host- cookie, withAuth and permission guard`
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS; `pnpm typecheck`.
+- [x] **Step 5: Commit** `feat(auth): DB sessions, __Host- cookie, withAuth and permission guard`
 
 ---
 
@@ -288,9 +288,9 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 **Interfaces:**
 - Produces: `audit(db, actor: { userId: string | null; ip?: string | null; userAgent?: string | null }, action: string, entity: string, entityId: string | null, before: unknown, after: unknown): Promise<void>` — inserts into `audit_log`; `before`/`after` pass through `redactSecrets()` which deletes keys `passwordHash`, `password`, `token`, `tokenHash` at any depth.
 
-- [ ] **Step 1: Failing test**: row inserted with action/entity; `after: { passwordHash: 'x', name: 'n' }` stored without `passwordHash`; `userId` null allowed.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(audit): audit log writer with secret redaction`
+- [x] **Step 1: Failing test**: row inserted with action/entity; `after: { passwordHash: 'x', name: 'n' }` stored without `passwordHash`; `userId` null allowed.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(audit): audit log writer with secret redaction`
 
 ---
 
@@ -303,9 +303,9 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 **Interfaces:**
 - Produces: `buildCsp(nonce: string, isDev: boolean): string` (exact policy from `docs/SECURITY.md`, `script-src 'self' 'nonce-<n>'` + `'unsafe-eval'` only when `isDev`); `SECURITY_HEADERS: Record<string,string>` (HSTS, XFO, nosniff, Referrer-Policy, Permissions-Policy, COOP); `isCsrfSafe(req: NextRequest, appOrigin: string): boolean` (GET/HEAD/OPTIONS → true; else Origin or Referer origin must equal `appOrigin` **and** `x-requested-with === 'AvenueStock'`); `middleware(req: NextRequest): NextResponse` (default export required by Next) with `config.matcher = ['/((?!_next/static|_next/image|favicon.ico|icons/).*)']`. Request id: incoming `x-request-id` (≤ 64 chars, `[A-Za-z0-9-]`) else `crypto.randomUUID()`; forwarded as request header and set on response. Nonce forwarded as `x-nonce` request header and CSP set on both request and response. CSRF failure for `/api/` paths → `NextResponse.json({ error: { code: 'FORBIDDEN', message: 'Cross-site request blocked' } }, { status: 403 })`.
 
-- [ ] **Step 1: Failing tests**: GET `/` response has all 7 header names with exact values (CSP contains `nonce-`, `frame-ancestors 'none'`); `X-Request-Id` present and echoed when supplied; POST `/api/v1/auth/login` with `Origin: https://evil.example` → 403 envelope; correct Origin but no `X-Requested-With` → 403; both correct → passes (`NextResponse.next`, status 200); GET with foreign origin passes.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS; `pnpm build` still green (middleware must stay edge-compatible: no pino/db imports).
-- [ ] **Step 5: Commit** `feat(security): headers, CSP nonce, request id and CSRF origin check in middleware`
+- [x] **Step 1: Failing tests**: GET `/` response has all 7 header names with exact values (CSP contains `nonce-`, `frame-ancestors 'none'`); `X-Request-Id` present and echoed when supplied; POST `/api/v1/auth/login` with `Origin: https://evil.example` → 403 envelope; correct Origin but no `X-Requested-With` → 403; both correct → passes (`NextResponse.next`, status 200); GET with foreign origin passes.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS; `pnpm build` still green (middleware must stay edge-compatible: no pino/db imports).
+- [x] **Step 5: Commit** `feat(security): headers, CSP nonce, request id and CSRF origin check in middleware`
 
 ---
 
@@ -319,9 +319,9 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 - Produces: `interface RouteSpec { method: 'GET'|'POST'|'PATCH'|'DELETE'; path: string; access: 'public' | 'auth' | Permission; load: () => Promise<Record<string, RouteHandler>>; sampleBody?: unknown }`; `ROUTES: RouteSpec[]`. Matrix test: for each route × role (plus anonymous): anonymous on non-public → 401; role lacking permission → 403; role with permission or `auth` → status not in {401, 403}; public → not 401/403. Routes added later must be registered or the test does not cover them — test also asserts `ROUTES.length` equals the number of `route.ts` files found by globbing `src/app/api/v1/**/route.ts` × exported methods.
 - `GET /health`: `withAuth({ public: true })`, runs `select 1`, returns `{ ok: true, db: 'up' }` or `{ ok: false, db: 'down' }` with 503.
 
-- [ ] **Step 1: Failing tests** (health 200 + body; matrix skeleton runs over `ROUTES` — initially only health).
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(api): health route and authz matrix test harness`
+- [x] **Step 1: Failing tests** (health 200 + body; matrix skeleton runs over `ROUTES` — initially only health).
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement.** **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(api): health route and authz matrix test harness`
 
 ---
 
@@ -338,9 +338,9 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 - Route: `withAuth({ public: true })` → `parse` → `setup` → `json({ user }, 201, { 'Set-Cookie': sessionCookieHeader(...) })`.
 - `toPublicSettings(row)`: `{ storeName, logoUrl, phone, address, currency, timezone, lowStockDefault, saleNumberPrefix, sellerDiscountCapPct (number), sizePresets, colorPresets, receiptHeader, receiptFooter }`.
 
-- [ ] **Step 1: Failing tests**: valid body → 201, `user.role === 'ADMIN'`, no `passwordHash` key, `Set-Cookie` has `__Host-as_session`, settings row has `storeName`; second call → 409; wrong token → 403; extra field → 400; weak password → 400 with `fields.password`.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement + register in manifest** (`access: 'public'`, `sampleBody`). **Step 4: Run** → PASS (matrix test included).
-- [ ] **Step 5: Commit** `feat(auth): POST /setup creates first admin and settings`
+- [x] **Step 1: Failing tests**: valid body → 201, `user.role === 'ADMIN'`, no `passwordHash` key, `Set-Cookie` has `__Host-as_session`, settings row has `storeName`; second call → 409; wrong token → 403; extra field → 400; weak password → 400 with `fields.password`.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement + register in manifest** (`access: 'public'`, `sampleBody`). **Step 4: Run** → PASS (matrix test included).
+- [x] **Step 5: Commit** `feat(auth): POST /setup creates first admin and settings`
 
 ---
 
@@ -359,7 +359,7 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 - `me(db, user)`: `{ user: toPublicUser, permissions: permissionsFor(role), settingsPublic: toPublicSettings(await getSettings(db)) }`.
 - Routes: login `withAuth({ public: true })` (reads existing cookie for rotation) → 200 `{ user }` + Set-Cookie; logout and me use `withAuth({ auth: true })`. Logout → 204 + clear cookie.
 
-- [ ] **Step 1: Failing tests** `tests/auth/login.test.ts`:
+- [x] **Step 1: Failing tests** `tests/auth/login.test.ts`:
   - correct creds → 200, `user.email`, cookie set; `remember:true` → `Max-Age` present, false → absent.
   - email `MIXED@Case.com` logs in user stored as `mixed@case.com`.
   - wrong password and unknown email → both 401 with identical body.
@@ -369,8 +369,8 @@ Run: `pnpm test tests/lib`  Expected: PASS.
   - login with an existing valid cookie issues a new token and the old session row is deleted (rotation).
   - DISABLED user with correct password → 403.
   `tests/auth/session.test.ts`: `GET /auth/me` without cookie 401; with cookie → `{ user, permissions, settingsPublic }` and SELLER `permissions` does not include `analytics.read`; `POST /auth/logout` → 204, cookie cleared, subsequent `/auth/me` 401.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement + register routes** (`login: public`, `logout: auth`, `me: auth`). **Step 4: Run** full `pnpm test` → PASS.
-- [ ] **Step 5: Commit** `feat(auth): login with lockout and rate limits, logout, me`
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement + register routes** (`login: public`, `logout: auth`, `me: auth`). **Step 4: Run** full `pnpm test` → PASS.
+- [x] **Step 5: Commit** `feat(auth): login with lockout and rate limits, logout, me`
 
 ---
 
@@ -388,9 +388,9 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 - `reset(db, { token, password }, ctx)`: lookup by hash with `purpose='RESET'`, `usedAt null`, `expiresAt > now` else `VALIDATION 'Invalid or expired token'`; transaction: update `passwordHash`, `mustChangePassword=false`, set `usedAt`, `revokeAllSessions`; audit `user.password_reset`.
 - Routes: both `public`; forgot → 204 always; reset → 204.
 
-- [ ] **Step 1: Failing tests**: forgot for existing user → 204 and captured email `text` contains `/reset?token=`; forgot unknown email → 204 and no email; 4th forgot within an hour → 429; reset with captured token → 204, old session cookie now 401, login with new password 200; reusing token → 400; expired token (update `expiresAt` to past) → 400; reset with common password → 400.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement + register.** **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(auth): forgot/reset password with single-use tokens`
+- [x] **Step 1: Failing tests**: forgot for existing user → 204 and captured email `text` contains `/reset?token=`; forgot unknown email → 204 and no email; 4th forgot within an hour → 429; reset with captured token → 204, old session cookie now 401, login with new password 200; reusing token → 400; expired token (update `expiresAt` to past) → 400; reset with common password → 400.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement + register.** **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(auth): forgot/reset password with single-use tokens`
 
 ---
 
@@ -401,9 +401,9 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 - Modify: `src/lib/route-manifest.ts`
 - Test: `tests/audit/list.test.ts`
 
-- [ ] **Step 1: Failing tests**: MANAGER → 200 with `data[]` containing earlier `auth.login` entry; SELLER → 403 `FORBIDDEN`; anonymous → 401; `?pageSize=500` → 400.
-- [ ] **Step 2: Run** → FAIL. **Step 3: Implement** with `withAuth({ permission: 'audit.read' })` and `paginationQuery`. **Step 4: Run** → PASS.
-- [ ] **Step 5: Commit** `feat(audit): GET /audit minimal list (manager-only)`
+- [x] **Step 1: Failing tests**: MANAGER → 200 with `data[]` containing earlier `auth.login` entry; SELLER → 403 `FORBIDDEN`; anonymous → 401; `?pageSize=500` → 400.
+- [x] **Step 2: Run** → FAIL. **Step 3: Implement** with `withAuth({ permission: 'audit.read' })` and `paginationQuery`. **Step 4: Run** → PASS.
+- [x] **Step 5: Commit** `feat(audit): GET /audit minimal list (manager-only)`
 
 ---
 
@@ -412,14 +412,17 @@ Run: `pnpm test tests/lib`  Expected: PASS.
 **Files:**
 - Modify: `README.md` (local + Vercel steps, env var table), `docs/DECISIONS.md`, `docs/SPRINTS.md` (tick Sprint 0 boxes that have passing tests), `docs/API-SPEC.md` (note `setupToken`, `retryAfter`), `.env.example` (verify vs `grep -rhoE "process\.env\.[A-Z_]+" src | sort -u`)
 
-- [ ] **Step 1: DECISIONS.md entries**: neon-serverless Pool instead of HTTP (transactions); Next 15 pinned although 16 exists; PGlite for tests; lockout in `failed_logins` table; in-memory limiter fallback; `setupToken` in body; `retryAfter` field in envelope for 423/429; `/health` and minimal `/audit` pulled forward; `GET /audit` as the manager-only route for the Sprint 0 "done when".
-- [ ] **Step 2: README** — local run, test, migrate; Vercel: env list `DATABASE_URL, DATABASE_URL_UNPOOLED, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, RESEND_API_KEY, EMAIL_FROM, APP_URL, SESSION_SECRET, SETUP_TOKEN, CRON_SECRET, BLOB_READ_WRITE_TOKEN`.
-- [ ] **Step 3: Verify** `pnpm typecheck && pnpm lint && pnpm test && pnpm build` — paste output.
-- [ ] **Step 4: Tick checkboxes** in `docs/SPRINTS.md` except "Vercel project + Neon + Upstash connected, first deploy green" (needs user accounts → Deferred).
-- [ ] **Step 5: Commit** `docs: sprint 0 README, decisions, checklist`
-- [ ] **Step 6: Run `/security-review full`** and fix FAILs.
+- [x] **Step 1: DECISIONS.md entries**: neon-serverless Pool instead of HTTP (transactions); Next 15 pinned although 16 exists; PGlite for tests; lockout in `failed_logins` table; in-memory limiter fallback; `setupToken` in body; `retryAfter` field in envelope for 423/429; `/health` and minimal `/audit` pulled forward; `GET /audit` as the manager-only route for the Sprint 0 "done when".
+- [x] **Step 2: README** — local run, test, migrate; Vercel: env list `DATABASE_URL, DATABASE_URL_UNPOOLED, UPSTASH_REDIS_REST_URL, UPSTASH_REDIS_REST_TOKEN, RESEND_API_KEY, EMAIL_FROM, APP_URL, SESSION_SECRET, SETUP_TOKEN, CRON_SECRET, BLOB_READ_WRITE_TOKEN`.
+- [x] **Step 3: Verify** `pnpm typecheck && pnpm lint && pnpm test && pnpm build` — paste output.
+- [x] **Step 4: Tick checkboxes** in `docs/SPRINTS.md` except "Vercel project + Neon + Upstash connected, first deploy green" (needs user accounts → Deferred).
+- [x] **Step 5: Commit** `docs: sprint 0 README, decisions, checklist`
+- [x] **Step 6: Run `/security-review full`** and fix FAILs.
 
 ## Deferred
 - First Vercel deploy (user accounts required). Steps in README.
 - `pnpm stock:verify` real implementation (Sprint 2); placeholder script exits 0.
 - `PATCH /me`, `POST /me/password` (Sprint 5 per SPRINTS.md).
+
+## Outcome (2026-11-03)
+All 15 tasks complete on branch `sprint-0`; final review by three reviewers (general, adversarial security, DB/deploy) found no Critical issues; every Important finding fixed test-first in one pass. Suite 139/139, typecheck/lint/build green, `pnpm audit` 0 high/critical. Deferred: first Vercel deploy (owner accounts), cleanup cron, failed-login audit events, `mustChangePassword` enforcement (Sprint 5). Rulings and deferred minors were recorded in the execution ledger and reported to the owner.
