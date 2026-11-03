@@ -4,8 +4,8 @@
  * single page and the mobile stepper in ProductEditScreen. Only Basics talks to the API
  * (POST /brands through the onCreateBrand callback).
  */
-import { useId, useRef, useState, type ReactNode } from 'react';
-import { Check, CircleAlert, ImagePlus, X } from 'lucide-react';
+import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
+import { Check, ChevronDown, CircleAlert, ImagePlus, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
 import { formatMoney, formatPct, marginPct } from '@/lib/format';
@@ -119,6 +119,81 @@ const CUSTOM_COLOR = '__custom__';
 const CUSTOM_SIZE = '__custom_size__';
 const PRESET_PREFIX = '__preset__:';
 
+/**
+ * A theme-aware dropdown picker. Replaces native <select> whose option list is rendered by the
+ * OS/browser and is unreadable in dark mode. Groups are rendered as section headers.
+ */
+type PickerGroup = { label?: string; items: { value: string; label: ReactNode; keywords?: string }[] };
+function PickerMenu({ placeholder, groups, onPick, disabled, invalid, 'aria-label': ariaLabel }: {
+  placeholder: string; groups: PickerGroup[]; onPick: (value: string) => void;
+  disabled?: boolean; invalid?: boolean; 'aria-label'?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const btnRef = useRef<HTMLButtonElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      const t = e.target as Node;
+      if (!popRef.current?.contains(t) && !btnRef.current?.contains(t)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey); };
+  }, [open]);
+  return (
+    <div className="relative">
+      <button
+        ref={btnRef}
+        type="button"
+        aria-label={ariaLabel}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        disabled={disabled}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'flex min-h-10 w-full items-center justify-between gap-2 rounded-input border bg-surface px-3 text-left text-sm text-ink',
+          'hover:bg-surface-2 focus:border-accent focus:outline-none',
+          invalid ? 'border-danger' : 'border-line',
+          disabled && 'opacity-60'
+        )}
+      >
+        <span className="truncate text-ink-2">{placeholder}</span>
+        <ChevronDown className="size-4 shrink-0 text-ink-2" aria-hidden />
+      </button>
+      {open && (
+        <div
+          ref={popRef}
+          role="listbox"
+          className="absolute left-0 right-0 top-full z-[60] mt-1.5 max-h-72 overflow-y-auto rounded-card border border-line bg-surface p-1.5 shadow-float"
+        >
+          {groups.every((g) => g.items.length === 0) ? (
+            <div className="px-3 py-2 text-sm text-ink-2">No options</div>
+          ) : (
+            groups.map((g, gi) => g.items.length === 0 ? null : (
+              <div key={gi} className={cn(gi > 0 && 'mt-1 border-t border-line pt-1')}>
+                {g.label && <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-2">{g.label}</div>}
+                {g.items.map((it) => (
+                  <button
+                    key={it.value}
+                    type="button"
+                    role="option"
+                    onClick={() => { onPick(it.value); setOpen(false); }}
+                    className="flex min-h-9 w-full items-center gap-2.5 rounded-lg px-3 text-left text-sm text-ink hover:bg-surface-2"
+                  >
+                    {it.label}
+                  </button>
+                ))}
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function VariantsSection({ form, set, errors, settings, showBarcodes = false, footwear = false }: SectionProps & { settings: Settings | undefined; showBarcodes?: boolean; footwear?: boolean }) {
   const presets = settings?.sizePresets ?? [];
   const [customSize, setCustomSize] = useState<string | null>(null);
@@ -154,28 +229,20 @@ export function VariantsSection({ form, set, errors, settings, showBarcodes = fa
       <div className="grid gap-5 md:grid-cols-2">
         <fieldset className="flex min-w-0 flex-col gap-2.5">
           <legend className="mb-2 text-[13px] font-medium">Sizes</legend>
-          <Select
+          <PickerMenu
             aria-label="Add a size"
-            value=""
-            onChange={(e) => {
-              const v = e.target.value;
+            placeholder="Add a size…"
+            groups={[
+              ...(presets.length ? [{ label: 'Add a whole run', items: presets.map((p) => ({ value: PRESET_PREFIX + p.name, label: <span><span className="font-medium">{p.name}</span>: <span className="text-ink-2">{p.sizes.join(', ')}</span></span> })) }] : []),
+              ...sizeGroupList.map((g) => ({ label: g.name, items: g.sizes.filter((x) => !form.sizes.includes(x)).map((x) => ({ value: x, label: x })) })),
+              { items: [{ value: CUSTOM_SIZE, label: <span className="text-accent">Custom size…</span> }] },
+            ]}
+            onPick={(v) => {
               if (v === CUSTOM_SIZE) { setCustomSize(''); return; }
               if (v.startsWith(PRESET_PREFIX)) { applyPreset(v.slice(PRESET_PREFIX.length)); return; }
               if (v) toggleSize(v);
             }}
-          >
-            <option value="">Add a size…</option>
-            {presets.length > 0 && (
-              <optgroup label="Add a whole run">
-                {presets.map((p) => <option key={p.name} value={PRESET_PREFIX + p.name}>{p.name}: {p.sizes.join(', ')}</option>)}
-              </optgroup>
-            )}
-            {sizeGroupList.map((g) => {
-              const left = g.sizes.filter((x) => !form.sizes.includes(x));
-              return left.length ? <optgroup key={g.name} label={g.name}>{left.map((x) => <option key={x} value={x}>{x}</option>)}</optgroup> : null;
-            })}
-            <option value={CUSTOM_SIZE}>Custom size…</option>
-          </Select>
+          />
           {orderedSizes.length > 0 && (
             <div className="flex flex-wrap gap-2">{orderedSizes.map((x) => <Chip key={x} selected onRemove={() => toggleSize(x)} aria-label={`Remove size ${x}`}>{x}</Chip>)}</div>
           )}
@@ -188,20 +255,20 @@ export function VariantsSection({ form, set, errors, settings, showBarcodes = fa
         </fieldset>
         <fieldset className="flex min-w-0 flex-col gap-2.5">
           <legend className="mb-2 text-[13px] font-medium">Colors</legend>
-          <Select
+          <PickerMenu
             aria-label="Add a color"
-            value=""
-            onChange={(e) => {
-              const v = e.target.value;
+            placeholder={remainingColors.length ? 'Add a color…' : 'All colors added'}
+            disabled={remainingColors.length === 0}
+            groups={[
+              { items: remainingColors.map((c) => ({ value: c.name, label: <span className="flex items-center gap-2"><ColorSwatch hex={c.hex} name={c.name} />{c.name}</span> })) },
+              { items: [{ value: CUSTOM_COLOR, label: <span className="text-accent">Custom color…</span> }] },
+            ]}
+            onPick={(v) => {
               if (v === CUSTOM_COLOR) { setShowCustomColor(true); return; }
               const c = colorOptions.find((x) => x.name === v);
               if (c) toggleColor(c);
             }}
-          >
-            <option value="">{remainingColors.length ? 'Add a color…' : 'All colors added'}</option>
-            {remainingColors.map((c) => <option key={c.name} value={c.name}>{c.name}</option>)}
-            <option value={CUSTOM_COLOR}>Custom color…</option>
-          </Select>
+          />
           {orderedColors.length > 0 && (
             <div className="flex flex-wrap gap-2">{orderedColors.map((c) => <Chip key={c.name} selected onRemove={() => toggleColor(c)} aria-label={`Remove ${c.name}`} leading={<ColorSwatch hex={c.hex} name={c.name} />}>{c.name}</Chip>)}</div>
           )}
