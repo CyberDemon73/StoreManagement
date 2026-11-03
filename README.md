@@ -153,7 +153,7 @@ Every view is built from the same primitives (`Button`, `Field`, `Card`, `Badge`
 - Branded HTML emails for invitations and password resets.
 
 **Operations**
-- A daily maintenance cron: purges, weekly stock reconciliation and a weekly private backup.
+- A daily maintenance cron: purges, a daily private backup that replaces the previous one, and a weekly stock reconciliation.
 - An admin-only full data export (zip of CSVs), a health check, structured logs with request ids.
 - An installable PWA with an offline page.
 
@@ -227,7 +227,7 @@ All variables are listed with comments in `.env.example`. Production refuses to 
 | `UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN` | required | Shared rate limits. The `KV_REST_API_URL` / `KV_REST_API_TOKEN` names injected by the Vercel Upstash integration also work |
 | `RESEND_API_KEY` / `EMAIL_FROM` | required | Invitation and password-reset email. Without a verified domain, Resend only delivers to the account owner |
 | `BLOB_READ_WRITE_TOKEN` | for photos | Public Vercel Blob store for product images |
-| `BACKUP_BLOB_READ_WRITE_TOKEN` | for backups | Private Vercel Blob store for the weekly backup (falls back to `BLOB_READ_WRITE_TOKEN`) |
+| `BACKUP_BLOB_READ_WRITE_TOKEN` | for backups | Private Vercel Blob store for the daily backup `backups/latest.zip` (falls back to `BLOB_READ_WRITE_TOKEN`) |
 | `CRON_SECRET` | for cron | At least 32 characters; Vercel sends it as `Authorization: Bearer …` to `/api/v1/cron/daily` |
 | `SESSION_SECRET` | optional | Reserved for signing non-session cookies |
 | `LOG_LEVEL` | optional | pino log level, default `info` |
@@ -247,7 +247,7 @@ The app runs on free tiers: Vercel Hobby, Neon, Upstash, Vercel Blob and Resend.
    ```
    Migrations never run inside the Vercel build; parallel builds would race.
 4. Deploy (`vercel deploy --prod`, or by connecting the GitHub repo in Vercel), then open `/setup` once to create the admin.
-5. The daily cron in `vercel.json` (`0 2 * * *` UTC) runs the purges, and on Sundays (store time) the stock check and the backup. Trigger it once from Vercel → Cron Jobs to confirm.
+5. The daily cron in `vercel.json` (`0 2 * * *` UTC) runs the purges and overwrites the backup `backups/latest.zip`, and on Sundays (store time) the stock check. Trigger it once from Vercel → Cron Jobs to confirm.
 
 Health check: `GET /api/v1/health` returns `{ "ok": true, "db": "up" }`, or 503 when the database is unreachable.
 

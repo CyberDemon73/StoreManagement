@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { getDb } from '@/db/client';
 import { failedLogins, idempotencyKeys, notifications, passwordResetTokens, sessions, users, variants } from '@/db/schema';
 import { resetEnvForTests } from '@/lib/env';
-import { BACKUP_RETENTION_MS, isStoreSunday, purgeStale, runDailyMaintenance, setBackupStoreForTests } from '@/services/maintenance';
+import { BACKUP_PATH, isStoreSunday, purgeStale, runDailyMaintenance, setBackupStoreForTests } from '@/services/maintenance';
 import { ensureSettings } from '@/services/settings';
 import { stockFixture } from '../helpers/stock';
 import { createUser } from '../helpers/users';
@@ -162,7 +162,7 @@ describe('runDailyMaintenance weekly work', () => {
     expect(await systemFor(admin.id)).toHaveLength(0);
   });
 
-  it('not Sunday → no verify and no backup', async () => {
+  it('any day: no stock verify on weekdays, but the daily backup still runs', async () => {
     const { db, admin1 } = await corrupt();
     const writes: string[] = [];
     setBackupStoreForTests({
@@ -173,12 +173,12 @@ describe('runDailyMaintenance weekly work', () => {
     const out = await runDailyMaintenance(db, SATURDAY);
     expect(out.weekly).toBe(false);
     expect(out.stockVerify).toBeUndefined();
-    expect(out.backup).toBeUndefined();
-    expect(writes).toEqual([]);
+    expect(out.backup).toEqual({ status: 'uploaded', path: 'backups/latest.zip', pruned: 0 });
+    expect(writes).toEqual(['backups/latest.zip']);
     expect(await systemFor(admin1.id)).toHaveLength(0);
   });
 
-  it('Sunday backup: the data-export zip is written to backups/<local date>.zip', async () => {
+  it('daily backup: the data-export zip always overwrites backups/latest.zip', async () => {
     const db = getDb();
     const admin = await createUser(db, { role: 'ADMIN' });
     const writes: { path: string; body: Uint8Array }[] = [];
@@ -188,15 +188,16 @@ describe('runDailyMaintenance weekly work', () => {
       },
     });
     const out = await runDailyMaintenance(db, SUNDAY);
-    expect(out.backup).toEqual({ status: 'uploaded', path: 'backups/2026-11-08.zip', pruned: 0 });
+    expect(BACKUP_PATH).toBe('backups/latest.zip');
+    expect(out.backup).toEqual({ status: 'uploaded', path: 'backups/latest.zip', pruned: 0 });
     expect(writes).toHaveLength(1);
-    expect(writes[0]!.path).toBe('backups/2026-11-08.zip');
+    expect(writes[0]!.path).toBe('backups/latest.zip');
     const files = unzipSync(writes[0]!.body);
     expect(strFromU8(files['users.csv']!)).toContain(admin.email);
     expect(files['sessions.csv']).toBeUndefined();
   });
 
-  it('Sunday backup is skipped cleanly when BLOB_READ_WRITE_TOKEN is unset', async () => {
+  it('backup is skipped cleanly when BLOB_READ_WRITE_TOKEN is unset', async () => {
     const db = getDb();
     await createUser(db, { role: 'ADMIN' });
     const out = await runDailyMaintenance(db, SUNDAY);
@@ -256,16 +257,15 @@ describe('runDailyMaintenance weekly work', () => {
     expect(tokens).toEqual(['images-store-token']);
   });
 
-  it('after a successful upload, backups older than 12 weeks are pruned; newer ones are kept', async () => {
+  it('after a successful upload, every other file under backups/ is removed so only latest.zip remains', async () => {
     const db = getDb();
     await createUser(db, { role: 'ADMIN' });
     const at = (ms: number) => new Date(SUNDAY.getTime() - ms);
     const blob = (pathname: string, uploadedAt: Date) => ({ pathname, url: `https://blob.example/${pathname}`, uploadedAt });
     const listed = [
-      blob('backups/2026-08-09.zip', at(BACKUP_RETENTION_MS + DAY)),
-      blob('backups/2026-08-16.zip', at(BACKUP_RETENTION_MS + MIN)),
-      blob('backups/2026-08-23.zip', at(BACKUP_RETENTION_MS - MIN)),
-      blob('backups/2026-11-01.zip', at(7 * DAY)),
+      blob('backups/2026-08-09.zip', at(90 * DAY)),
+      blob('backups/2026-11-01.zip', at(7 * DAY + MIN)),
+      blob('backups/latest.zip', at(0)),
     ];
     const prefixes: string[] = [];
     const deleted: string[][] = [];
@@ -280,10 +280,9 @@ describe('runDailyMaintenance weekly work', () => {
       },
     });
     const out = await runDailyMaintenance(db, SUNDAY);
-    expect(BACKUP_RETENTION_MS).toBe(12 * 7 * DAY);
     expect(prefixes).toEqual(['backups/']);
-    expect(deleted).toEqual([['https://blob.example/backups/2026-08-09.zip', 'https://blob.example/backups/2026-08-16.zip']]);
-    expect(out.backup).toEqual({ status: 'uploaded', path: 'backups/2026-11-08.zip', pruned: 2 });
+    expect(deleted).toEqual([['https://blob.example/backups/2026-08-09.zip', 'https://blob.example/backups/2026-11-01.zip']]);
+    expect(out.backup).toEqual({ status: 'uploaded', path: 'backups/latest.zip', pruned: 2 });
   });
 
   it('no pruning when the upload fails; a failing prune does not fail the backup', async () => {
@@ -308,6 +307,6 @@ describe('runDailyMaintenance weekly work', () => {
         throw new Error('list failed');
       },
     });
-    expect((await runDailyMaintenance(db, SUNDAY)).backup).toEqual({ status: 'uploaded', path: 'backups/2026-11-08.zip', pruned: 0 });
+    expect((await runDailyMaintenance(db, SUNDAY)).backup).toEqual({ status: 'uploaded', path: 'backups/latest.zip', pruned: 0 });
   });
 });

@@ -20,7 +20,7 @@ Create a Redis database (region close to Vercel function region) → `UPSTASH_RE
 3. Set env vars (Production + Preview): `DATABASE_URL`, `DATABASE_URL_UNPOOLED`, `UPSTASH_*`, `RESEND_API_KEY`, `EMAIL_FROM`, `SESSION_SECRET` (32+ random bytes, base64), `SETUP_TOKEN` (random), `APP_URL` (https://your-domain), `CRON_SECRET`.
 4. Function region: pick one near Neon's region to cut latency.
 5. Build command `pnpm build`. Do NOT add `pnpm db:migrate` to the build. Before each deploy that adds a file under `drizzle/`, run `DATABASE_URL_UNPOOLED=<direct url> pnpm db:migrate` from your machine (migrations are forward-only; each file has a `-- rollback:` note).
-6. `CRON_SECRET`: at least 32 characters (`openssl rand -base64 32`). Vercel sends it as `Authorization: Bearer …` to the cron declared in `vercel.json`: `0 2 * * *` (UTC) → `GET /api/v1/cron/daily`. Daily it purges expired/used tokens, dead sessions (incl. sessions older than the current `sessionAbsoluteDays`), old idempotency keys, read notifications older than 90 days and old login failures. On Sundays (store timezone) it also runs the stock reconciliation (admins get a SYSTEM notification on mismatch) and writes the backup zip (backups older than 12 weeks are deleted). Check it once: Vercel → Project → Cron Jobs → Run.
+6. `CRON_SECRET`: at least 32 characters (`openssl rand -base64 32`). Vercel sends it as `Authorization: Bearer …` to the cron declared in `vercel.json`: `0 2 * * *` (UTC) → `GET /api/v1/cron/daily`. Daily it purges expired/used tokens, dead sessions (incl. sessions older than the current `sessionAbsoluteDays`), old idempotency keys, read notifications older than 90 days and old login failures. Every day it also overwrites the private backup `backups/latest.zip`; on Sundays (store timezone) it runs the stock reconciliation too (admins get a SYSTEM notification on mismatch). Check it once: Vercel → Project → Cron Jobs → Run.
 7. Health: `GET /api/v1/health` → `{ ok: true, db: 'up' }` (503 when the database is unreachable). Point an uptime monitor (e.g. UptimeRobot free) at it.
 8. Custom domain: add it in Vercel → Domains, set `APP_URL` to it, redeploy. The app already sends `Strict-Transport-Security: max-age=63072000; includeSubDomains; preload`. After a week without HTTPS issues on every subdomain, submit the apex at hstspreload.org (hard to undo — only if every subdomain will stay HTTPS).
 
@@ -42,7 +42,7 @@ pnpm test
 
 ## 7. Backups
 - Neon keeps point-in-time history for a limited window on the free tier (restore by creating a branch at a timestamp, then point `DATABASE_URL` at it).
-- Weekly: the Sunday cron writes `backups/YYYY-MM-DD.zip` (one CSV per table, no password hashes or session tokens) to Vercel Blob as a **private** blob. Download it monthly from Vercel → Storage → Blob and keep a copy off Vercel.
+- Daily: the cron writes `backups/latest.zip` (one CSV per table, no password hashes or session tokens) to the **private** Blob store `avenue-backups`, replacing the previous day's file, so exactly one backup exists at a time. Download it regularly from Vercel → Storage → avenue-backups and keep dated copies off Vercel if you need history.
 - On demand: an ADMIN can download the same zip from `GET /api/v1/data/export`.
 - Stock reconciliation can also be run by hand: `pnpm stock:verify` with `DATABASE_URL` set.
 
