@@ -66,14 +66,14 @@ Each sprint: ~1 Claude Code session of focused work. Run `/sprint N` (skill incl
 ## Sprint 3 — Sales, returns, receipts
 **Goal:** POS backend that is atomic and auditable.
 
-- [ ] Schema: `sales`, `sale_items`, `returns`, `return_items`, `sale_counters`.
-- [ ] `POST /sales`: validate items, lock variants, check stock, snapshot `unitPrice` + `unitCost` per line, compute totals server-side (ignore client totals), enforce seller discount cap from settings, allocate sale number `AS-000001` atomically, create SALE movements, write audit — all in one transaction. Idempotency key header to avoid double-charge on retry.
-- [ ] `GET /sales` (filters: date, seller, payment, status; sellers see only their own), `GET /sales/:id`.
-- [ ] `POST /sales/:id/void` (manager; reverses movements; status VOID).
-- [ ] `POST /sales/:id/returns` (partial allowed; restock flag per line creates RETURN movements; sale status updates; refund recorded).
-- [ ] `GET /sales/:id/receipt` → JSON + printable HTML (and a `?format=pdf` via `@react-pdf/renderer` or HTML print — keep simple).
-- [ ] Park/hold sales: `POST /sales/parked`, `GET`, `DELETE` (per user, max 3, TTL 24 h).
-- [ ] Tests: totals computed server-side, discount cap, double-submit idempotency, void restores stock, partial return math.
+- [x] Schema: `sales`, `sale_items`, `returns`, `return_items`, `sale_counters`.
+- [x] `POST /sales`: validate items, lock variants, check stock, snapshot `unitPrice` + `unitCost` per line, compute totals server-side (ignore client totals), enforce seller discount cap from settings, allocate sale number `AS-000001` atomically, create SALE movements, write audit — all in one transaction. Idempotency key header to avoid double-charge on retry.
+- [x] `GET /sales` (filters: date, seller, payment, status; sellers see only their own), `GET /sales/:id`.
+- [x] `POST /sales/:id/void` (manager; reverses movements; status VOID).
+- [x] `POST /sales/:id/returns` (partial allowed; restock flag per line creates RETURN movements; sale status updates; refund recorded).
+- [x] `GET /sales/:id/receipt` → JSON + printable HTML (and a `?format=pdf` via `@react-pdf/renderer` or HTML print — keep simple). _(JSON + escaped HTML for browser print; PDF deferred per "keep simple")_
+- [x] Park/hold sales: `POST /sales/parked`, `GET`, `DELETE` (per user, max 3, TTL 24 h).
+- [x] Tests: totals computed server-side, discount cap, double-submit idempotency, void restores stock, partial return math.
 
 ---
 
