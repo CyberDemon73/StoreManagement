@@ -34,6 +34,7 @@ Conventions
 | PATCH | /variants/:id | variants.write | `{ sellPrice?, costPrice?, lowStockThreshold?, barcode?, isActive? }` — **no quantity** |
 | DELETE | /variants/:id | variants.write | 409 unless qty 0 and no movements |
 | GET | /variants/lookup | products.read | `?barcode=` or `?sku=` → variant + product |
+| GET | /variants/search | products.read | `?q&limit` (limit 1..50, default 20) → `VariantWithProduct[]` over ACTIVE products: sku/name contains or exact barcode, ordered by sku |
 | GET/POST/PATCH | /brands, /brands/:id | catalog.read / catalog.write | `{ name, logoUrl?, isActive? }`; GET includes `productCount` |
 | GET/POST/PATCH | /categories, /categories/:id | catalog.read / catalog.write | `{ name, parentId? }` |
 | GET/POST/PATCH | /suppliers, /suppliers/:id | catalog.read / catalog.write | |
