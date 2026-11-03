@@ -20,7 +20,7 @@ export async function createTestDb(): Promise<TestDb> {
   return { db: pglite as unknown as Db, close: () => client.close() };
 }
 
-const TABLES = ['audit_log', 'password_reset_tokens', 'sessions', 'failed_logins', 'settings', 'users'];
+const TABLES = ['stock_movements', 'variants', 'products', 'suppliers', 'categories', 'brands', 'audit_log', 'password_reset_tokens', 'sessions', 'failed_logins', 'settings', 'users'];
 
 export async function truncateAll(db: Db): Promise<void> {
   await db.execute(sql.raw(`TRUNCATE TABLE ${TABLES.map((t) => `"${t}"`).join(', ')} RESTART IDENTITY CASCADE`));

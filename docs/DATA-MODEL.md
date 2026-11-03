@@ -31,7 +31,7 @@ products
   id, name text, brand_id fk, category_id fk, description text, base_sku text unique,
   images jsonb default '[]' (string[]), default_cost int null, default_price int,
   status enum(ACTIVE,ARCHIVED) default ACTIVE, tags text[] default '{}',
-  created_by fk users, created_at, updated_at
+  created_by fk users null (set null on delete), created_at, updated_at
   index(brand_id), index(category_id), index(status), gin trigram index on name, index(base_sku)
 
 variants
