@@ -13,7 +13,9 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
-    "stock:verify": "tsx src/db/verify-stock.ts"
+    "stock:verify": "tsx src/db/verify-stock.ts",
+    "db:seed-big": "tsx scripts/seed-big.ts",
+    "secrets:scan": "node scripts/scan-secrets.mjs"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.2.0",
