@@ -84,7 +84,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         {auth.viewAsSeller && <ViewingAsBanner onExit={() => auth.setViewAsSeller(false)} />}
         <TopBar onSearch={() => setSearchOpen(true)} />
         <main id="main" className="flex-1 pb-24 md:pb-0">{children}</main>
-        <BottomTabBar items={tabsFor(role)} pathname={pathname} />
+        {!hidesTabBar(pathname) && <BottomTabBar items={tabsFor(role)} pathname={pathname} />}
       </div>
 
       <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
@@ -143,6 +143,14 @@ export function TopBar({ onSearch }: { onSearch: () => void }) {
       </Popover>
     </header>
   );
+}
+
+/**
+ * Full-screen forms with their own fixed Back/Next/Save footer: the tab bar (z-40) would sit on
+ * top of that footer and hide it, so these screens drop the tab bar (they have a back arrow).
+ */
+export function hidesTabBar(pathname: string): boolean {
+  return /^\/products\/(new|[^/]+\/edit)\/?$/.test(pathname);
 }
 
 /* ---------- Bottom tab bar (mobile) ---------- */
