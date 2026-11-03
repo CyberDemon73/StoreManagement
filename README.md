@@ -1,12 +1,29 @@
-# Avenue Brand
+<p align="center">
+  <img src="public/brand/mark.svg" width="96" alt="Avenue Brand mark" />
+</p>
 
-Inventory, point of sale and reporting for a single clothing store whose products come in sizes and colours. One Next.js app serves the API and the installable web app (phone, iPad and desktop) for three roles: **Admin**, **Manager** and **Seller**.
+<h1 align="center">Avenue Brand</h1>
 
-**Live:** https://avenue-stock.vercel.app
+<p align="center">
+  Inventory, point of sale and reporting for a single clothing store whose products come in sizes and colours.<br/>
+  One Next.js app serves the API and the installable web app for <b>Admin</b>, <b>Manager</b> and <b>Seller</b>.
+</p>
+
+<p align="center">
+  <a href="https://avenue-stock.vercel.app"><b>Live demo →</b></a>
+  &nbsp;·&nbsp;
+  <a href="docs/BRAND.md">Brand kit</a>
+  &nbsp;·&nbsp;
+  <a href="docs/API-SPEC.md">API</a>
+  &nbsp;·&nbsp;
+  <a href="docs/DATA-MODEL.md">Data model</a>
+</p>
 
 ---
 
 ## Contents
+- [Brand kit](#brand-kit)
+- [Screens](#screens)
 - [Features](#features)
 - [Tech stack](#tech-stack)
 - [How it works](#how-it-works)
@@ -18,6 +35,93 @@ Inventory, point of sale and reporting for a single clothing store whose product
 - [Security](#security)
 - [Project layout](#project-layout)
 - [Documentation](#documentation)
+
+---
+
+## Brand kit
+
+Calm, quiet, confident — a well-run boutique's back office. One mark, one typeface, one accent, used sparingly. The full spec lives in [`docs/BRAND.md`](docs/BRAND.md).
+
+### Logo
+
+<table>
+  <tr>
+    <td align="center" width="25%">
+      <img src="public/brand/mark.svg" width="88" alt="Mark" /><br/>
+      <sub><b>Mark</b><br/>sage tile, white glyph, sand hanger dot</sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="public/brand/logo-horizontal.svg" height="64" alt="Horizontal lockup, light" /><br/>
+      <sub><b>Lockup · light</b><br/>mark + wordmark</sub>
+    </td>
+    <td align="center" width="25%" bgcolor="#141715">
+      <img src="public/brand/logo-horizontal-dark.svg" height="64" alt="Horizontal lockup, dark" /><br/>
+      <sub><b>Lockup · dark</b></sub>
+    </td>
+    <td align="center" width="25%">
+      <img src="public/brand/wordmark.svg" height="40" alt="Wordmark" /><br/>
+      <sub><b>Wordmark</b><br/>Inter 600 + 400, −0.02 em</sub>
+    </td>
+  </tr>
+</table>
+
+The glyph is an **"A"** whose crossbar runs on as a clothes rail, with a sand dot for the hanger — *stock on the rail*. Clear space equals the height of the crossbar stroke. Minimum size 20 px (tile), 10 px (mono glyph).
+
+### Colour
+
+| | Token | Light | Dark | Role |
+|:-:|---|:-:|:-:|---|
+| ![#3F6B5C](https://via.placeholder.com/14/3F6B5C/3F6B5C.png) | `--accent` sage | `#3F6B5C` | `#7FB5A0` | Primary actions, active nav, chart line |
+| ![#E3EDE8](https://via.placeholder.com/14/E3EDE8/E3EDE8.png) | `--accent-soft` | `#E3EDE8` | `#223229` | Selected states, tints |
+| ![#C8B89A](https://via.placeholder.com/14/C8B89A/C8B89A.png) | sand | `#C8B89A` | `#C8B89A` | Hanger dot, underline rule — never text |
+| ![#F7F6F3](https://via.placeholder.com/14/F7F6F3/F7F6F3.png) | `--bg` | `#F7F6F3` | `#141715` | Page |
+| ![#FFFFFF](https://via.placeholder.com/14/FFFFFF/FFFFFF.png) | `--surface` | `#FFFFFF` | `#1C201E` | Cards, sheets |
+| ![#1F2421](https://via.placeholder.com/14/1F2421/1F2421.png) | `--ink` / `--ink-2` | `#1F2421` / `#5B625D` | `#ECEEEB` / `#AEB5B0` | Text |
+| ![#2F7D5B](https://via.placeholder.com/14/2F7D5B/2F7D5B.png) | status · ok | `#2F7D5B` | lighter | — |
+| ![#B7791F](https://via.placeholder.com/14/B7791F/B7791F.png) | status · warn | `#B7791F` | lighter | — |
+| ![#B04A3F](https://via.placeholder.com/14/B04A3F/B04A3F.png) | status · danger | `#B04A3F` | lighter | — |
+| ![#3D6A8A](https://via.placeholder.com/14/3D6A8A/3D6A8A.png) | status · info | `#3D6A8A` | lighter | — |
+
+Every token is defined once in [`src/app/globals.css`](src/app/globals.css).
+
+### Type, shape & motion
+
+- **Type** — Inter (self-hosted via `next/font`). Headings 600, body 400, labels 11 px / 600 / 0.08 em small caps. Numbers always tabular-nums. Base 15 px on phones, 14 px on desktop tables.
+- **Shape** — 12 px card radius, 8 px inputs, 16 px mark tile (at 64). 1 px `--line` borders. One soft shadow for floating sheets and menus only.
+- **Motion** — 150–200 ms ease-out. Sheets slide up, drawers slide in from the right, nothing bounces.
+- **Voice** — Short, specific, calm. Numbers in EGP with two decimals. No exclamation marks. Errors say what happened and that nothing was changed.
+
+---
+
+## Screens
+
+Both light and dark themes are first-class — every page is built from the same tokens and reads the viewer's system preference.
+
+<table>
+  <tr>
+    <td align="center" width="50%">
+      <a href="https://avenue-stock.vercel.app/login"><img src="docs/images/screen-login.jpg" alt="Sign in" /></a><br/>
+      <sub><b>Sign in</b> · the public landing. Dark theme shown.</sub>
+    </td>
+    <td align="center" width="50%">
+      <a href="https://avenue-stock.vercel.app/forgot"><img src="docs/images/screen-forgot.jpg" alt="Reset your password" /></a><br/>
+      <sub><b>Password reset</b> · 30-minute email link.</sub>
+    </td>
+  </tr>
+</table>
+
+**Behind the sign-in** — the app is organised around five job-to-be-done surfaces:
+
+| Surface | Routes | What it is |
+|---|---|---|
+| **Dashboard** (Admin/Manager) | `/dashboard` | Today's sales, profit & margin trend, low-stock watchlist, top products, recent audit activity. |
+| **Catalogue** | `/products`, `/products/new`, `/products/:id` | Product list with filters, product detail with a size × colour variant matrix, inline edit, image upload. |
+| **Point of sale** (Seller) | `/home`, `/sales/new`, `/sales/:id` | Scan-to-add cart, parking, discounts within the seller cap, receipt sized for an 80 mm roll. |
+| **Stock** | `/stock/purchases`, `/stock/adjustments`, `/stock/counts`, `/stock/low` | Receiving, reason-coded adjustments, counts, low-stock & out-of-stock lists. |
+| **Reports** | `/analytics/*` | Sales, profit, payment mix, top products, sellers, returns, slow movers, stock ageing, price list — each with a CSV export. |
+| **Administration** | `/users`, `/settings`, `/audit`, `/notifications` | Invitations, temp passwords, store settings, audit log, in-app notifications. |
+
+Every view is built from the same primitives (`Button`, `Field`, `Card`, `Badge`, `Chip`, `ColorSwatch`, `VariantMatrix`, `Combobox`, `PickerMenu`, `BarcodeCaptureButton`). Open the [live demo](https://avenue-stock.vercel.app) to walk through all of them.
 
 ---
 
