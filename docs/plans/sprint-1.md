@@ -253,3 +253,6 @@ export interface VariantWithProductOut extends VariantOut { product: { id; name;
 ## Deferred
 - `GET /labels`, CSV import/export (Sprint 6); purchases/adjustments/counts (Sprint 2); `soldLast30d` real value (Sprint 3).
 - Supplier `purchaseCount`/`lastPurchaseAt` stay 0/null until Sprint 2.
+
+## Outcome (2026-11-03)
+All 10 tasks complete on branch `sprint-1` (Tasks 4–9 by four parallel implementers). Final review by three reviewers found no Critical issues; every Important finding fixed test-first in one pass. Suite 363/363, typecheck/lint/build green, `pnpm audit` 0 high/critical. Deferred: trigram indexes for SKU search at scale, `applyMovements` sorted bulk lock (Sprint 2), verifyStock cron (Sprint 6). Rulings and deferred minors in `docs/plans/ledgers/sprint-1-ledger.md`.
