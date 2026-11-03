@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull, ne, sql, type SQL } from 'drizzle-orm';
 import type { Db } from '@/db/client';
-import { brands, categories, products, suppliers, variants, type CategoryRow, type SupplierRow } from '@/db/schema';
+import { brands, categories, products, purchases, suppliers, variants, type CategoryRow, type SupplierRow } from '@/db/schema';
 import { audit, type AuditActor } from '@/lib/audit';
 import type { AuthUser, ReqCtx } from '@/lib/auth';
 import type { Role } from '@/lib/permissions';
@@ -224,7 +224,7 @@ export async function patchCategory(
 
 // ---------- suppliers ----------
 
-// Purchases arrive in Sprint 2; until then every supplier has no purchase history.
+// A freshly created or patched supplier is returned without re-querying; the list carries real counts.
 const NO_PURCHASES = { purchaseCount: 0, lastPurchaseAt: null } as const;
 
 // Friendly pre-check; suppliers_name_unique is the authority.
@@ -239,9 +239,24 @@ async function assertSupplierNameFree(db: Db, name: string, exceptId?: string): 
   if (row) throw conflict();
 }
 
+/** One grouped query: purchase count and latest receivedAt per supplier (no N+1). */
 export async function listSuppliers(db: Db): Promise<SupplierOut[]> {
-  const rows = await db.select().from(suppliers).orderBy(asc(suppliers.name));
-  return rows.map((r) => toSupplier(r, NO_PURCHASES));
+  const rows = await db
+    .select({
+      supplier: suppliers,
+      purchaseCount: sql<number>`count(${purchases.id})::int`.mapWith(Number),
+      lastPurchaseAt: sql<string | null>`max(${purchases.receivedAt})`,
+    })
+    .from(suppliers)
+    .leftJoin(purchases, eq(purchases.supplierId, suppliers.id))
+    .groupBy(suppliers.id)
+    .orderBy(asc(suppliers.name));
+  return rows.map((r) =>
+    toSupplier(r.supplier, {
+      purchaseCount: r.purchaseCount,
+      lastPurchaseAt: r.lastPurchaseAt == null ? null : new Date(r.lastPurchaseAt).toISOString(),
+    }),
+  );
 }
 
 export async function createSupplier(db: Db, user: AuthUser, input: SupplierInput, ctx: ReqCtx): Promise<SupplierOut> {

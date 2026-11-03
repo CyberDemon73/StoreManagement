@@ -112,3 +112,25 @@ describe('suppliers', () => {
     expect(sList[0]).not.toHaveProperty('notes');
   });
 });
+
+describe('suppliers with purchases', () => {
+  it('list shows purchaseCount 1 and lastPurchaseAt once a purchase names the supplier', async () => {
+    const { db, m, cookie } = await manager();
+    const { stockFixture } = await import('../helpers/stock');
+    const { POST: createPurchase } = await import('@/app/api/v1/stock/purchases/route');
+    const fx = await stockFixture(db, m.id);
+    const created = await (await call(POST, { method: 'POST', path: '/api/v1/suppliers', cookie, body: { name: 'Omega' } })).json();
+    const res = await call(createPurchase, {
+      method: 'POST',
+      path: '/api/v1/stock/purchases',
+      cookie,
+      body: { supplierId: created.id, receivedAt: '2024-03-05T10:00:00Z', items: [{ variantId: fx.variants[0].id, qty: 1, unitCost: 100 }] },
+    });
+    expect(res.status).toBe(201);
+    const list = await (await call(GET, { path: '/api/v1/suppliers', cookie })).json();
+    const omega = list.find((s: { id: string }) => s.id === created.id);
+    expect(omega).toMatchObject({ purchaseCount: 1, lastPurchaseAt: '2024-03-05T10:00:00.000Z' });
+    const delta = list.find((s: { name: string }) => s.name === 'Delta Textiles');
+    expect(delta).toMatchObject({ purchaseCount: 0, lastPurchaseAt: null });
+  });
+});
