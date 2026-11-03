@@ -112,15 +112,15 @@ Each sprint: ~1 Claude Code session of focused work. Run `/sprint N` (skill incl
 ## Sprint 6 — Hardening, PWA support, import/export, ops
 **Goal:** production-ready public app.
 
-- [ ] `POST /products/import` CSV (multipart, streamed, dry-run mode returns row errors), `GET /products/export`, `GET /data/export` (all tables zip, admin only).
-- [ ] Barcode label data endpoint `GET /labels?variantIds=` (frontend renders).
-- [ ] PWA: `manifest.json`, service worker (next-pwa or Serwist): cache shell + `GET /products` stale-while-revalidate; API mutations network-only; `/offline` route.
-- [ ] Health check `GET /health` (db ping), structured logging (pino), request id header, error reporting (Sentry free tier optional).
-- [ ] Security pass with `/security-review` skill: dependency audit, headers test, authz test matrix (every route × every role), SQL injection fuzz on `q`, upload type sniffing, secrets scan.
-- [ ] Performance: `EXPLAIN ANALYZE` on products list + dashboard; add missing indexes; connection reuse.
-- [ ] CI (GitHub Actions): lint, typecheck, test, `drizzle-kit check`, `pnpm audit --audit-level=high`.
-- [ ] Backups: Neon branch/point-in-time note + weekly `data/export` scheduled via Vercel Cron (Hobby allows daily crons).
-- [ ] DEPLOYMENT.md finalized; custom domain + HSTS preload.
+- [x] `POST /products/import` CSV (multipart, streamed, dry-run mode returns row errors), `GET /products/export`, `GET /data/export` (all tables zip, admin only).
+- [x] Barcode label data endpoint `GET /labels?variantIds=` (frontend renders).
+- [x] PWA: `manifest.json`, service worker (next-pwa or Serwist): cache shell + `GET /products` stale-while-revalidate; API mutations network-only; `/offline` route.
+- [x] Health check `GET /health` (db ping), structured logging (pino), request id header, error reporting (Sentry free tier optional).
+- [x] Security pass with `/security-review` skill: dependency audit, headers test, authz test matrix (every route × every role), SQL injection fuzz on `q`, upload type sniffing, secrets scan.
+- [x] Performance: `EXPLAIN ANALYZE` on products list + dashboard; add missing indexes; connection reuse.
+- [x] CI (GitHub Actions): lint, typecheck, test, `drizzle-kit check`, `pnpm audit --audit-level=high`.
+- [x] Backups: Neon branch/point-in-time note + weekly `data/export` scheduled via Vercel Cron (Hobby allows daily crons).
+- [ ] DEPLOYMENT.md finalized; custom domain + HSTS preload. — DEPLOYMENT.md done; domain + preload submission need the owner's Vercel account (HSTS preload header already sent).
 
 ---
 
