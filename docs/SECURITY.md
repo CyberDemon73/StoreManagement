@@ -17,7 +17,7 @@ The app is public on the internet. Treat every request as hostile until authenti
 - Tests: `tests/authz/matrix.test.ts` iterates every route × role from a generated route list and asserts 401/403/2xx as expected. Adding a route without updating the matrix fails the test.
 
 ## Input
-- Zod `.strict()` on body, query and params. Coerce numbers from query. Max body 1 MB (uploads 5 MB on their route only).
+- Zod `.strict()` on body, query and params. Coerce numbers from query. Max body 1 MB (uploads 4 MB on their route only (Vercel caps request bodies at 4.5 MB)).
 - Search `q`: trim, max 100 chars; passed to parameterised ILIKE only.
 - IDs are UUIDs; validate format before hitting the DB.
 - Uploads: accept `image/jpeg|png|webp` by **magic bytes** (not extension/MIME header), ≤ 4 MB (Vercel request bodies are capped at 4.5 MB), re-encode via `sharp` (fit within 2000 px, reject > 25 MP) to strip metadata, random filename.
