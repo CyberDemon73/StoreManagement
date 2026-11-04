@@ -72,7 +72,7 @@ export function LabelsScreen() {
 
   return (
     <>
-      <PageHeader className="no-print" title="Print labels" back="/products" crumbs={[{ label: 'Products', href: '/products' }, { label: 'Print labels' }]}
+      <PageHeader wide className="no-print" title="Print labels" back="/products" crumbs={[{ label: 'Products', href: '/products' }, { label: 'Print labels' }]}
         actions={<Button variant="primary" leading={<Printer />} disabled={total === 0} onClick={() => void printOrShare('labels')}>Print {total} label{total === 1 ? '' : 's'}</Button>} />
       <Page wide className="print:p-0">
         <div className="grid gap-4 xl:grid-cols-[400px_minmax(0,1fr)]">

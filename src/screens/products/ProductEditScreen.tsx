@@ -168,7 +168,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
   /* ---------- desktop / tablet ---------- */
   return (
     <>
-      <PageHeader title={title} back="/products" crumbs={[{ label: 'Products', href: '/products' }, { label: isEdit ? 'Edit' : 'New product' }]}
+      <PageHeader wide title={title} back="/products" crumbs={[{ label: 'Products', href: '/products' }, { label: isEdit ? 'Edit' : 'New product' }]}
         actions={<>
           {draftLabel && <span className="text-xs text-ink-2">{draftLabel}</span>}
           <LinkButton href={isEdit && id ? `/products/${id}` : '/products'}>Cancel</LinkButton>

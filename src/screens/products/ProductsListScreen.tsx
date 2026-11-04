@@ -102,7 +102,7 @@ export function ProductsListScreen() {
 
   return (
     <>
-      <PageHeader title="Products" crumbs={[{ label: 'Catalog' }, { label: 'Products' }]} description={list.data ? `${total} product${total === 1 ? '' : 's'}` : undefined}
+      <PageHeader wide title="Products" crumbs={[{ label: 'Catalog' }, { label: 'Products' }]} description={list.data ? `${total} product${total === 1 ? '' : 's'}` : undefined}
         actions={<>
           {auth.can('export.csv') && bp !== 'mobile' && <Button leading={<Download />} loading={exporting} onClick={() => void exportCsv()}>Export CSV</Button>}
           {canWrite && (bp === 'mobile' ? <LinkButton variant="primary" iconOnly aria-label="New product" href="/products/new"><Plus /></LinkButton> : <LinkButton variant="primary" leading={<Plus />} href="/products/new">New product</LinkButton>)}

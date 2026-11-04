@@ -128,7 +128,7 @@ function OpenCount({ initial, canManage, onApplied }: { initial: StockCount; can
             <Progress value={countedN} max={Math.max(1, count.items.length)} className="h-2" />
             <form className="flex gap-2" onSubmit={(e) => { e.preventDefault(); void onScan(scan); }}>
               <Input size="lg" value={scan} onChange={(e) => setScan(e.target.value)} placeholder="Scan or type SKU" aria-label="Scan to count" leading={<ScanLine aria-hidden />} autoFocus />
-              <BarcodeScannerButton size="lg" aria-label="Open camera scanner" onScan={(v) => { if (!bump(v.id)) toast({ kind: 'info', title: 'Not in this count', body: `${v.sku} is outside the scope.` }); }} />
+              <BarcodeScannerButton size="lg" label="" iconOnly aria-label="Open camera scanner" onScan={(v) => { if (!bump(v.id)) toast({ kind: 'info', title: 'Not in this count', body: `${v.sku} is outside the scope.` }); }} />
             </form>
             {lastItem ? (
               <div className="flex items-center gap-2.5 rounded-input bg-surface-2 px-3 py-2.5">
@@ -148,7 +148,7 @@ function OpenCount({ initial, canManage, onApplied }: { initial: StockCount; can
             <span><span className="text-ink-2">Net units</span> <span className={cn('tabular font-semibold', deltaClass(netUnits))}>{signedQty(netUnits)}</span></span>
             {auth.isManager && <span><span className="text-ink-2">Net value</span> <span className={cn('tabular font-semibold', deltaClass(netValue))}>{formatMoney(netValue, 'EGP', { signed: true })}</span></span>}
             <span><span className="text-ink-2">Adjustments</span> <span className="tabular font-semibold">{diffs.length}</span></span>
-            <div className="ml-auto flex gap-2">
+            <div className="ml-auto flex flex-wrap justify-end gap-2">
               <Button disabled={flagged.length === 0} onClick={() => { flagged.forEach((r) => setCounted(r.variantId, null)); setLast(undefined); toast({ kind: 'info', title: `${flagged.length} row${flagged.length === 1 ? '' : 's'} cleared for recount` }); }}>Recount flagged{flagged.length ? ` · ${flagged.length}` : ''}</Button>
               {canManage && <Button variant="primary" disabled={diffs.length === 0} onClick={() => setConfirm(true)}>4 · Apply {diffs.length} adjustment{diffs.length === 1 ? '' : 's'}</Button>}
             </div>

@@ -72,7 +72,7 @@ export function ComponentsGallery() {
   return (
     <>
       <BindDismiss />
-      <PageHeader title="Component library" description="components/ui · components/app — the primitives every screen is composed from" actions={<Toggle checked={resolved === 'dark'} onChange={(v) => setTheme(v ? 'dark' : 'light')} label="Dark mode" />} />
+      <PageHeader wide title="Component library" description="components/ui · components/app — the primitives every screen is composed from" actions={<Toggle checked={resolved === 'dark'} onChange={(v) => setTheme(v ? 'dark' : 'light')} label="Dark mode" />} />
       <Page wide>
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           <Section title="Button">

@@ -76,7 +76,7 @@ export function SettingsScreen() {
 
   return (
     <>
-      <PageHeader title="Settings" compactTitle={SECTION_LABEL[section]} actions={<>
+      <PageHeader wide title="Settings" compactTitle={SECTION_LABEL[section]} actions={<>
         {dirtySections.length > 0 && <span className="text-xs text-ink-2" role="status">Unsaved changes in {dirtySections.map((s) => SECTION_LABEL[s]).join(', ')}</span>}
         {dirty.length > 0 && <Button variant="ghost" onClick={() => setDraft(saved.data)} disabled={saving}>Discard</Button>}
         <Button variant="primary" onClick={() => void save()} loading={saving} disabled={!dirty.length}>Save changes</Button>
