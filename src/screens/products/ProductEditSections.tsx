@@ -8,6 +8,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, CircleAlert, ImagePlus, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
+import { MAX_PICK_BYTES, shrinkForUpload } from '@/lib/image-resize';
 import { formatMoney, formatPct, marginPct } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { Checkbox, Field, Input, MoneyInput, Select, Textarea } from '@/components/ui/Field';
@@ -71,15 +72,15 @@ export function ImagesSection({ form, set, tint }: Pick<SectionProps, 'form' | '
   const inputRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [uploadError, setUploadError] = useState<string>();
-  // POST /uploads (≤ 4 MB, jpeg/png/webp); the mock keeps a local object URL instead.
+  // Picks up to 50 MB are shrunk on the device first: POST /uploads only takes ≤ 4 MB (Vercel body cap).
   const addFiles = async (files: FileList | null) => {
     if (!files) return;
     setUploadError(undefined);
-    const accepted = Array.from(files).filter((f) => f.type.startsWith('image/') && f.size <= 4 * 1024 * 1024);
-    if (accepted.length < files.length) setUploadError('Only JPG, PNG or WebP up to 4 MB are accepted.');
+    const accepted = Array.from(files).filter((f) => f.type.startsWith('image/') && f.size <= MAX_PICK_BYTES);
+    if (accepted.length < files.length) setUploadError('Only images up to 50 MB are accepted.');
     const urls: string[] = [];
     for (const f of accepted) {
-      try { urls.push((await api.uploads.image(f)).url); }
+      try { urls.push((await api.uploads.image(await shrinkForUpload(f))).url); }
       catch (e) {
         const m = (e as Error).message;
         setUploadError(/storage not configured/i.test(m) ? 'Image uploads are not configured on this server (missing BLOB_READ_WRITE_TOKEN). Add the token and try again.' : m);
@@ -109,7 +110,7 @@ export function ImagesSection({ form, set, tint }: Pick<SectionProps, 'form' | '
         </label>
       </div>
       {uploadError && <p role="alert" className="text-xs text-danger-ink">{uploadError}</p>}
-      <p className="text-xs text-ink-2">First image is the cover · JPG/PNG/WebP up to 4 MB · 1:1 recommended. Images upload as you add them.</p>
+      <p className="text-xs text-ink-2">First image is the cover · JPG/PNG/WebP up to 50 MB · 1:1 recommended. Images upload as you add them.</p>
     </>
   );
 }

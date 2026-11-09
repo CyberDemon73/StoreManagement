@@ -1,6 +1,6 @@
 'use client';
 /** Users · Create user panel (POST /users). Sheet on mobile, Drawer on larger screens. */
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Copy } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
@@ -15,12 +15,6 @@ export const ROLE_OPTIONS: { role: Role; label: string; description: string }[] 
   { role: 'MANAGER', label: 'Manager', description: 'Everything an admin can do, for now.' },
   { role: 'ADMIN', label: 'Admin', description: 'Full access including users and security settings.' },
 ];
-
-function tempPassword(): string {
-  const words = ['harbor', 'linen', 'copper', 'willow', 'meadow', 'ember', 'quartz', 'saffron', 'violet', 'cedar'];
-  const pick = () => words[Math.floor(Math.random() * words.length)] ?? 'linen';
-  return `${pick()}-${pick()}-${Math.floor(10 + Math.random() * 89)}`;
-}
 
 export function RoleRadioCards({ value, onChange, name = 'role' }: { value: Role; onChange: (r: Role) => void; name?: string }) {
   return (
@@ -44,9 +38,13 @@ export function CreateUserPanel({ open, onClose, onCreated }: { open: boolean; o
   const [mode, setMode] = useState<'INVITE' | 'TEMP'>('INVITE');
   const [busy, setBusy] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const temp = useMemo(() => tempPassword(), [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The server generates the temporary password and returns it once; keep the panel open on it
+  // until the admin has copied it down.
+  const [created, setCreated] = useState<{ name: string; password: string }>();
 
-  const reset = () => { setName(''); setEmail(''); setRole('SELLER'); setMode('INVITE'); setErrors({}); };
+  const reset = () => { setName(''); setEmail(''); setRole('SELLER'); setMode('INVITE'); setErrors({}); setCreated(undefined); };
+  const close = () => { reset(); onClose(); };
+  const copy = (pw: string) => { void navigator.clipboard?.writeText(pw).then(() => toast({ kind: 'info', title: 'Temporary password copied' })).catch(() => undefined); };
 
   const submit = async () => {
     const errs: Record<string, string> = {};
@@ -59,20 +57,34 @@ export function CreateUserPanel({ open, onClose, onCreated }: { open: boolean; o
       const { user: u, temporaryPassword } = await api.users.create({ name: name.trim(), email: email.trim(), role, mode });
       onCreated(u);
       if (mode === 'TEMP' && temporaryPassword) {
-        // Shown once — the server never returns it again. Copy before closing the toast.
-        toast({ kind: 'success', title: `${u.name} created`, body: `Temporary password: ${temporaryPassword}`, durationMs: 60_000, action: { label: 'Copy', onClick: () => void navigator.clipboard?.writeText(temporaryPassword).catch(() => undefined) } });
-      } else {
-        toast({ kind: 'success', title: mode === 'INVITE' ? `Invite sent to ${u.email}` : `${u.name} created`, body: mode === 'INVITE' ? 'The link expires in 48 hours.' : undefined });
+        setCreated({ name: u.name, password: temporaryPassword });
+        return;
       }
-      reset(); onClose();
+      toast({ kind: 'success', title: mode === 'INVITE' ? `Invite sent to ${u.email}` : `${u.name} created`, body: mode === 'INVITE' ? 'The link expires in 48 hours.' : undefined });
+      close();
     } catch (err) {
       if (err instanceof ApiError) setErrors(err.fields ?? { form: err.message }); else setErrors({ form: 'Something went wrong.' });
     } finally { setBusy(false); }
   };
 
+  if (created) {
+    return (
+      <Panel open={open} onClose={close} title={`${created.name} created`} description="Give them this temporary password. It is shown only once."
+        footer={<div className="flex gap-2"><Button size="lg" variant="primary" className="flex-1" onClick={close}>Done</Button></div>}>
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center gap-2 rounded-input border border-line bg-surface-2 px-3 py-2">
+            <span className="tabular flex-1 select-all break-all font-mono text-sm" aria-label="Temporary password">{created.password}</span>
+            <Button size="sm" variant="ghost" leading={<Copy />} onClick={() => copy(created.password)} data-autofocus>Copy</Button>
+          </div>
+          <p className="text-xs text-ink-2">They sign in with it and must choose their own password straight away.</p>
+        </div>
+      </Panel>
+    );
+  }
+
   return (
-    <Panel open={open} onClose={() => { reset(); onClose(); }} title="Create user" description="They will appear in the list straight away."
-      footer={<div className="flex gap-2"><Button size="lg" variant="primary" className="flex-1" loading={busy} onClick={() => void submit()}>{mode === 'INVITE' ? 'Create & send invite' : 'Create user'}</Button><Button size="lg" onClick={() => { reset(); onClose(); }}>Cancel</Button></div>}>
+    <Panel open={open} onClose={close} title="Create user" description="They will appear in the list straight away."
+      footer={<div className="flex gap-2"><Button size="lg" variant="primary" className="flex-1" loading={busy} onClick={() => void submit()}>{mode === 'INVITE' ? 'Create & send invite' : 'Create user'}</Button><Button size="lg" onClick={close}>Cancel</Button></div>}>
       <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); void submit(); }} noValidate>
         {errors.form && <p role="alert" className="rounded-input bg-danger-soft px-3.5 py-2.5 text-[13px] text-danger-ink">{errors.form}</p>}
         <Field label="Full name" htmlFor="u-name" error={errors.name}><Input id="u-name" size="lg" autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} invalid={!!errors.name} data-autofocus /></Field>
@@ -81,13 +93,7 @@ export function CreateUserPanel({ open, onClose, onCreated }: { open: boolean; o
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-1.5 text-[13px] font-medium">First sign-in</legend>
           <Segmented size="lg" grow value={mode} onChange={setMode} aria-label="First sign-in" options={[{ value: 'INVITE', label: 'Send invite link' }, { value: 'TEMP', label: 'Set temporary password' }]} />
-          {mode === 'INVITE' ? <p className="text-xs text-ink-2">Invite expires in 48 hours. They choose their own password.</p> : (
-            <div className="flex items-center gap-2 rounded-input border border-line bg-surface-2 px-3 py-2">
-              <span className="tabular flex-1 font-mono text-sm" aria-label="Temporary password">{temp}</span>
-              <Button size="sm" variant="ghost" leading={<Copy />} onClick={() => { void navigator.clipboard?.writeText(temp); toast({ kind: 'info', title: 'Temporary password copied' }); }}>Copy</Button>
-            </div>
-          )}
-          {mode === 'TEMP' && <p className="text-xs text-ink-2">They must change it at first sign-in.</p>}
+          <p className="text-xs text-ink-2">{mode === 'INVITE' ? 'Invite expires in 48 hours. They choose their own password.' : 'A temporary password is generated and shown after you create the user. They must change it at first sign-in.'}</p>
         </fieldset>
         <button type="submit" className="sr-only">Create</button>
       </form>

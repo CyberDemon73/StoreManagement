@@ -6,6 +6,7 @@ import { homeFor } from '@/lib/landing';
 import { permissionForPath } from '@/lib/nav';
 import { AppShell } from '@/components/app/AppShell';
 import { ForbiddenScreen } from '@/screens/system/SystemScreens';
+import { ChangePasswordPanel } from '@/screens/seller/ProfileScreen';
 
 /** Role home pages: opening the other role's home is a wrong turn, not a permission error. */
 const HOME_ROUTES = new Set(['/dashboard', '/home']);
@@ -28,5 +29,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }, [wrongHome, auth, router]);
 
   if (!auth || wrongHome) return <div className="flex min-h-dvh items-center justify-center text-sm text-ink-2" aria-busy="true">Loading…</div>;
+  // The API answers 403 to everything but /me/password until a temporary password is replaced,
+  // so skip the shell (it would fire calls that fail) and ask for the new password first.
+  if (auth.user?.mustChangePassword) {
+    return <div className="min-h-dvh bg-surface-2"><ChangePasswordPanel open required onClose={() => void auth.logout()} onChanged={auth.passwordChanged} /></div>;
+  }
   return <AppShell>{denied && perm ? <ForbiddenScreen permission={perm} /> : children}</AppShell>;
 }

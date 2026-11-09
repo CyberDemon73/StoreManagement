@@ -20,7 +20,7 @@ The app is public on the internet. Treat every request as hostile until authenti
 - Zod `.strict()` on body, query and params. Coerce numbers from query. Max body 1 MB (uploads 4 MB on their route only (Vercel caps request bodies at 4.5 MB)).
 - Search `q`: trim, max 100 chars; passed to parameterised ILIKE only.
 - IDs are UUIDs; validate format before hitting the DB.
-- Uploads: accept `image/jpeg|png|webp` by **magic bytes** (not extension/MIME header), ≤ 4 MB (Vercel request bodies are capped at 4.5 MB), re-encode via `sharp` (fit within 2000 px, reject > 25 MP) to strip metadata, random filename.
+- Uploads: accept `image/jpeg|png|webp` by **magic bytes** (not extension/MIME header), ≤ 4 MB on the wire (Vercel request bodies are capped at 4.5 MB; the client accepts picks up to 50 MB and downscales them in the browser — a convenience, never trusted), re-encode via `sharp` (fit within 2000 px, reject > 25 MP) to strip metadata, random filename.
 - CSV import: parse streaming, max 5,000 rows, cells sanitised against formula injection (`=`, `+`, `-`, `@` prefixes quoted) on export.
 
 ## Transport & headers (middleware)

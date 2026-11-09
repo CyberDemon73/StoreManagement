@@ -40,7 +40,7 @@ Conventions
 | GET/POST/PATCH | /brands, /brands/:id | catalog.read / catalog.write | `{ name, logoUrl?, isActive? }`; GET includes `productCount` |
 | GET/POST/PATCH | /categories, /categories/:id | catalog.read / catalog.write | `{ name, parentId? }` |
 | GET/POST/PATCH | /suppliers, /suppliers/:id | catalog.read / catalog.write | |
-| POST | /uploads | products.write | multipart image ≤ 4 MB (Vercel request bodies are capped at 4.5 MB) → `{ url }` |
+| POST | /uploads | products.write | multipart image ≤ 4 MB (Vercel request bodies are capped at 4.5 MB; the app accepts picks up to 50 MB and shrinks them on the device to ≤ 2000 px first) → `{ url }` |
 | POST | /products/import | export.csv | multipart field `file` (CSV ≤ 2 MB, ≤ 5,000 rows; columns `name, brand, category, size, color, colorHex?, price, cost?, qty?, barcode?`, unknown columns ignored; row 2 = first data row). `?dryRun=1` → 200 `{ rows, ok, errors: [{ row, message, data }] }`, no writes. Without dryRun: all-or-nothing → 201 `{ rows, ok, errors: [], created: { products, variants } }`, or 400 `{ error, rows, ok, errors }` writing nothing. Opening qty booked as INITIAL movements |
 | GET | /products/export | export.csv | `text/csv` (BOM, formula-neutralised), one row per active variant: import columns + `sku`; re-imports unchanged |
 

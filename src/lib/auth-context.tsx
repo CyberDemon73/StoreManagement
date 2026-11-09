@@ -25,6 +25,8 @@ interface AuthValue {
   logout: () => Promise<void>;
   setViewAsSeller: (on: boolean) => void;
   switchRole: (role: Role) => void;
+  /** After POST /me/password succeeds: the server has cleared mustChangePassword. */
+  passwordChanged: () => void;
 }
 
 const KEY = 'avenue.session';
@@ -93,6 +95,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logout: async () => { await api.auth.logout().catch(() => undefined); clearSwData(); persist(null); router.replace('/login'); },
     setViewAsSeller: (on) => { if (session) persist({ ...session, viewAsSeller: on }); },
     switchRole: (r) => { if (session && session.user.roles.includes(r)) persist({ ...session, actingRole: r, viewAsSeller: false }); },
+    passwordChanged: () => { if (session) persist({ ...session, user: { ...session.user, mustChangePassword: false } }); },
   }), [session, role, ready, persist, router]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
