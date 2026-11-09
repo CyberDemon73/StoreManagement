@@ -9,8 +9,9 @@ import { ConfirmDialog, Dialog, MenuItem, Popover } from '@/components/ui/Overla
 import { useToast } from '@/components/ui/Toast';
 import type { Role, User } from '@/types';
 import { RoleRadioCards } from './CreateUserPanel';
+import { choiceBody, EMPTY_CHOICE, GeneratedPassword, PasswordChoice, passwordChoiceError, type PasswordChoiceValue } from './PasswordChoice';
 
-type Action = 'role' | 'reset' | 'signout' | 'toggle' | 'delete';
+type Action = 'role' | 'reset' | 'setpw' | 'signout' | 'toggle' | 'delete';
 
 export function UserActions({ user, onChange, onDeleted }: { user: User; onChange: (u: User) => void; onDeleted?: (id: string) => void }) {
   const auth = useAuth();
@@ -49,7 +50,25 @@ export function UserActions({ user, onChange, onDeleted }: { user: User; onChang
     } finally { setBusy(false); }
   };
 
-  const open = (a: Action) => { setMenu(false); setError(undefined); setRole(user.role); setDialog(a); };
+  const [choice, setChoice] = useState<PasswordChoiceValue>(EMPTY_CHOICE);
+  const [pwError, setPwError] = useState<string>();
+  const [generated, setGenerated] = useState<string>();
+  const setPassword = async () => {
+    const hint = passwordChoiceError(choice);
+    if (hint) { setPwError(hint); return; }
+    setBusy(true); setPwError(undefined); setError(undefined);
+    try {
+      const { temporaryPassword } = await api.users.resetPassword(user.id, 'TEMP', choiceBody(choice));
+      if (temporaryPassword) { setGenerated(temporaryPassword); return; }
+      toast({ kind: 'success', title: `Password set for ${user.name}`, body: 'They were signed out everywhere.' });
+      setDialog(null);
+    } catch (e) {
+      if (e instanceof ApiError && e.fields?.password) setPwError(e.fields.password);
+      else setError(e instanceof ApiError ? e.message : 'Something went wrong.');
+    } finally { setBusy(false); }
+  };
+
+  const open = (a: Action) => { setMenu(false); setError(undefined); setRole(user.role); setChoice(EMPTY_CHOICE); setPwError(undefined); setGenerated(undefined); setDialog(a); };
 
   if (disabled) {
     return (
@@ -66,7 +85,9 @@ export function UserActions({ user, onChange, onDeleted }: { user: User; onChang
         : <Button size="sm" onClick={() => open('role')}>Edit</Button>}
       <Popover open={menu} onClose={() => setMenu(false)} anchor={<Button size="sm" variant="ghost" iconOnly aria-label={`More actions for ${user.name}`} aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu((m) => !m)}><MoreHorizontal /></Button>}>
         <MenuItem onClick={() => open('role')}>Edit role</MenuItem>
-        <MenuItem onClick={() => open('reset')}>Force password reset</MenuItem>
+        {/* Own password goes through Profile (it needs the current one); an invitee has none yet. */}
+        {!isSelf && user.status !== 'INVITED' && <MenuItem onClick={() => open('setpw')}>Set password</MenuItem>}
+        <MenuItem onClick={() => open('reset')}>Email reset link</MenuItem>
         <MenuItem onClick={() => open('signout')}>Sign out everywhere</MenuItem>
         <div className="my-1 h-px bg-line" />
         <MenuItem danger onClick={() => open('toggle')}>Disable user</MenuItem>
@@ -82,6 +103,17 @@ export function UserActions({ user, onChange, onDeleted }: { user: User; onChang
 
       <ConfirmDialog open={dialog === 'reset'} onClose={() => setDialog(null)} pending={busy} title={`Force password reset for ${user.name}?`} description={`We email ${user.email} a reset link that works for 30 minutes. Their current password keeps working until they use it.`} confirmLabel="Send reset link"
         onConfirm={() => void run(async () => { await api.users.resetPassword(user.id, 'EMAIL'); }, `Reset link sent to ${user.email}`)} />
+
+      <Dialog open={dialog === 'setpw'} onClose={() => setDialog(null)} title={generated ? `New password for ${user.name}` : `Set password · ${user.name}`}
+        description={generated ? 'Give them this password. It is shown only once.' : 'Replaces their current password and signs them out everywhere. Other admins are notified.'}
+        footer={generated
+          ? <Button variant="primary" onClick={() => setDialog(null)}>Done</Button>
+          : <><Button onClick={() => setDialog(null)}>Cancel</Button><Button variant="primary" loading={busy} onClick={() => void setPassword()}>Set password</Button></>}>
+        {generated
+          ? <GeneratedPassword password={generated} />
+          : <form onSubmit={(e) => { e.preventDefault(); void setPassword(); }} noValidate><PasswordChoice value={choice} onChange={setChoice} error={pwError} /><button type="submit" className="sr-only">Set password</button></form>}
+        {error && <p role="alert" className="mt-3 text-xs text-danger-ink">{error}</p>}
+      </Dialog>
 
       <ConfirmDialog open={dialog === 'signout'} onClose={() => setDialog(null)} pending={busy} title={`Sign ${user.name} out everywhere?`} description={`${user.sessions ?? 0} active session${user.sessions === 1 ? '' : 's'} will end. They can sign in again straight away.`} confirmLabel="Sign out everywhere"
         onConfirm={() => void run(() => api.users.revokeSessions(user.id), `${user.name} signed out on every device`)} />

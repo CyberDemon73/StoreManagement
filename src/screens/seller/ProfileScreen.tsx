@@ -125,8 +125,8 @@ export function ChangePasswordPanel({ open, onClose, required, onChanged }: { op
   const [error, setError] = useState<ApiError>();
   const st = strength(next);
   const mismatch = confirm.length > 0 && confirm !== next;
-  const tooShort = next.length > 0 && next.length < 8;
-  const canSubmit = current.length > 0 && next.length >= 8 && confirm === next && !busy;
+  const tooShort = next.length > 0 && next.length < 10;
+  const canSubmit = current.length > 0 && next.length >= 10 && confirm === next && !busy;
 
   const reset = () => { setCurrent(''); setNext(''); setConfirm(''); setError(undefined); setShow(false); };
   const close = () => { reset(); onClose(); };
@@ -150,14 +150,14 @@ export function ChangePasswordPanel({ open, onClose, required, onChanged }: { op
 
   return (
     <Panel open={open} onClose={close} title={required ? 'Choose a new password' : 'Change password'}
-      description={required ? 'You signed in with a temporary password. Enter it as the current password, then choose your own (at least 8 characters).' : 'At least 8 characters. Avoid names and common words.'}
+      description={required ? 'You signed in with a temporary password. Enter it as the current password, then choose your own (at least 10 characters).' : 'At least 10 characters. Avoid names and common words.'}
       footer={<div className="flex justify-end gap-2 pb-1"><Button onClick={close}>{required ? 'Sign out' : 'Cancel'}</Button><Button variant="primary" type="submit" form="pw-form" loading={busy} disabled={!canSubmit}>Save password</Button></div>}>
       <form id="pw-form" className="flex flex-col gap-4" onSubmit={submit} noValidate>
         {error && <p role="alert" className="rounded-input bg-danger-soft px-3.5 py-2.5 text-[13px] text-danger-ink">{error.code === 'UNAUTHENTICATED' || error.code === 'VALIDATION' ? error.message : `Couldn't change the password. ${error.message}`}</p>}
         <Field label={required ? 'Temporary password' : 'Current password'} htmlFor="pw-current" error={error?.fields?.current}>
           <Input id="pw-current" type={type} size="lg" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} invalid={!!error?.fields?.current} data-autofocus trailing={eye} />
         </Field>
-        <Field label="New password" htmlFor="pw-next" error={tooShort ? 'Use at least 8 characters.' : error?.fields?.next} help={!tooShort && next ? st.label : undefined}>
+        <Field label="New password" htmlFor="pw-next" error={tooShort ? 'Use at least 10 characters.' : error?.fields?.next} help={!tooShort && next ? st.label : undefined}>
           <Input id="pw-next" type={type} size="lg" autoComplete="new-password" value={next} onChange={(e) => setNext(e.target.value)} invalid={tooShort || !!error?.fields?.next} />
           <div className="mt-1 grid grid-cols-4 gap-1" aria-hidden>{Array.from({ length: 4 }).map((_, i) => <span key={i} className={cn('h-1 rounded-full', i < st.score ? barTone : 'bg-surface-2')} />)}</div>
         </Field>

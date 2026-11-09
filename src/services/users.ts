@@ -191,9 +191,11 @@ export async function createUser(
   const [taken] = await db.select({ id: users.id }).from(users).where(eq(users.email, input.email)).limit(1);
   if (taken) throw new AppError('CONFLICT', EMAIL_TAKEN, { fields: { email: EMAIL_TAKEN } });
 
-  const temporaryPassword = input.mode === 'TEMP' ? generateTemporaryPassword() : undefined;
+  // An admin-chosen password is already known to the admin, so only a generated one is returned.
+  const temporaryPassword = input.mode === 'TEMP' && !input.password ? generateTemporaryPassword() : undefined;
+  const initial = input.mode === 'TEMP' ? (input.password ?? temporaryPassword) : undefined;
   // An invited account gets a hash of 32 random bytes nobody knows, so it is unusable until accepted.
-  const passwordHash = await hashPassword(temporaryPassword ?? randomBytes(32).toString('base64url'));
+  const passwordHash = await hashPassword(initial ?? randomBytes(32).toString('base64url'));
   const inviteToken = input.mode === 'INVITE' ? generateToken() : undefined;
 
   let user: PublicUser;
@@ -207,7 +209,7 @@ export async function createUser(
           role: input.role,
           passwordHash,
           status: inviteToken ? 'INVITED' : 'ACTIVE',
-          mustChangePassword: Boolean(temporaryPassword),
+          mustChangePassword: input.mode === 'TEMP' && input.mustChange !== false,
         })
         .returning();
       if (!row) throw new Error('user insert returned no row');
@@ -220,7 +222,7 @@ export async function createUser(
         });
       }
       const created = toPublicUser(row);
-      await audit(tx, actorOf(actor, ctx), 'user.create', 'user', row.id, null, { ...created, mode: input.mode });
+      await audit(tx, actorOf(actor, ctx), 'user.create', 'user', row.id, null, { ...created, mode: input.mode, ...(input.mode === 'TEMP' && { chosen: Boolean(input.password) }) });
       return created;
     });
   } catch (err) {
@@ -311,8 +313,10 @@ export async function resetUserPassword(
   input: ResetPasswordInput,
   ctx: ReqCtx,
 ): Promise<{ temporaryPassword?: string }> {
-  const temporaryPassword = input.mode === 'TEMP' ? generateTemporaryPassword() : undefined;
-  const passwordHash = temporaryPassword ? await hashPassword(temporaryPassword) : undefined;
+  const temporaryPassword = input.mode === 'TEMP' && !input.password ? generateTemporaryPassword() : undefined;
+  const newPassword = input.mode === 'TEMP' ? (input.password ?? temporaryPassword) : undefined;
+  const passwordHash = newPassword ? await hashPassword(newPassword) : undefined;
+  const mustChange = input.mustChange !== false;
   const resetToken = input.mode === 'EMAIL' ? generateToken() : undefined;
 
   const result = await db.transaction(async (tx) => {
@@ -329,7 +333,7 @@ export async function resetUserPassword(
     // Older links must not outlive the reset an admin just made.
     await invalidateResetTokens(tx, id);
     if (passwordHash) {
-      await tx.update(users).set({ passwordHash, mustChangePassword: true, updatedAt: new Date() }).where(eq(users.id, id));
+      await tx.update(users).set({ passwordHash, mustChangePassword: mustChange, updatedAt: new Date() }).where(eq(users.id, id));
     }
     if (resetToken) {
       await tx.insert(passwordResetTokens).values({
@@ -352,7 +356,11 @@ export async function resetUserPassword(
       },
       actor.id,
     );
-    await audit(tx, actorOf(actor, ctx), 'user.reset_password', 'user', id, null, { mode: input.mode, targetRole: row.role });
+    await audit(tx, actorOf(actor, ctx), 'user.reset_password', 'user', id, null, {
+      mode: input.mode,
+      targetRole: row.role,
+      ...(input.mode === 'TEMP' && { chosen: Boolean(input.password), mustChange }),
+    });
     return { target: row, inviteToken: undefined };
   });
 
