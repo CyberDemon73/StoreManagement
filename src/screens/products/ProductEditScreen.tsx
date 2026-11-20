@@ -17,18 +17,12 @@ import { Button, LinkButton } from '@/components/ui/Button';
 import { Stepper } from '@/components/ui/Controls';
 import { ErrorState, Skeleton } from '@/components/ui/States';
 import { useToast } from '@/components/ui/Toast';
-import type { ColorRef, ProductDetail } from '@/types';
-import { checklist, derive, DRAFT_KEY, type DraftRecord, EMPTY_FORM, type EditPlan, type FormErrors, formFromProduct, planEditSave, type ProductFormState, STEPS, validate } from './product-form';
+import type { ColorRef } from '@/types';
+import { checklist, derive, DRAFT_KEY, type DraftRecord, EMPTY_FORM, type FormErrors, formFromProduct, planEditSave, type ProductFormState, STEPS, validate } from './product-form';
+import { cleanBarcodes, saveProductEdits } from './edit-save';
 import { useCatalog } from './products-shared';
 import { BasicsSection, ImagesSection, PricingSection, ReviewRail, SectionCard, VariantsSection } from './ProductEditSections';
 import { isFootwearCategory } from '@/lib/sizes';
-
-/** Only non-empty barcodes for cells that are still in the matrix. */
-function cleanBarcodes(form: ProductFormState): Record<string, string> | undefined {
-  const keys = new Set(form.sizes.flatMap((s) => form.colors.map((c) => `${s}|${c.name}`)));
-  const out = Object.fromEntries(Object.entries(form.barcodes ?? {}).map(([k, v]): [string, string] => [k, v.trim()]).filter(([k, v]) => v !== '' && keys.has(k)));
-  return Object.keys(out).length ? out : undefined;
-}
 
 export function ProductEditScreen({ id }: { id?: string }) {
   const isEdit = !!id;
@@ -93,7 +87,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
       const images = form.images.filter((u) => !u.startsWith('blob:'));
       let productId = id;
       if (isEdit && id && product.data && plan) {
-        await saveEdit(id, product.data, base, images, plan);
+        await saveProductEdits(api, { productId: id, current: product.data, form, base, images, plan });
       } else {
         const created = await api.products.create({ ...base, images, variants: { sizes: form.sizes, colors: form.colors, initialQty: form.setInitialQty ? form.initialQty : 0, barcodes: cleanBarcodes(form), costPrice: form.defaultCost, sellPrice: form.defaultPrice } });
         productId = created.id;
@@ -107,54 +101,6 @@ export function ProductEditScreen({ id }: { id?: string }) {
       if (e instanceof ApiError && e.fields) { setServerErrors(e.fields as FormErrors); if (bp === 'mobile' && e.fields.baseSku) setStep(0); }
       toast({ kind: 'error', title: isEdit ? "Couldn't save the product" : "Couldn't create the product", body: (e as Error).message });
     } finally { setSaving(false); }
-  };
-
-  /**
-   * Edit save, in dependency order: product fields, new size/colour cells (with their barcodes),
-   * quantities as ADJUSTMENT movements, barcodes that changed, then removed zero-stock cells last.
-   * Barcodes are only sent from here, so a wrong scan stays on the form until the user saves.
-   */
-  const saveEdit = async (productId: string, current: ProductDetail, base: Parameters<typeof api.products.update>[1], images: string[], plan: EditPlan) => {
-    await api.products.update(productId, { ...base, baseSku: form.baseSku.trim() || undefined, images });
-
-    const have = new Map(current.variants.map((v) => [matrixKey(v.size, v.color.name), v] as const));
-    const ids = new Map([...have].map(([key, v]) => [key, v.id] as const));
-    const newCells = derived.cells.filter((c) => !have.has(c.key));
-    if (newCells.length > 0) {
-      const newKeys = new Set(newCells.map((c) => c.key));
-      const cleaned = cleanBarcodes(form);
-      const barcodes = cleaned && Object.fromEntries(Object.entries(cleaned).filter(([k]) => newKeys.has(k)));
-      const created = await api.products.addVariants(productId, { sizes: form.sizes, colors: form.colors, barcodes: barcodes && Object.keys(barcodes).length ? barcodes : undefined });
-      for (const v of created) ids.set(matrixKey(v.size, v.color.name), v.id);
-    }
-
-    for (const v of plan.reactivate) await api.variants.update(v.id, { isActive: true });
-
-    const adjustments = derived.cells.flatMap((c) => {
-      const variantId = ids.get(c.key);
-      if (!variantId) return [];
-      const now = have.get(c.key)?.quantity ?? 0;
-      const next = form.initialQty[c.key] ?? now;
-      return next === now ? [] : [{ variantId, newQty: next, reason: 'CORRECTION' as const, note: 'Set on product edit' }];
-    });
-    if (adjustments.length > 0) await api.stock.adjust(adjustments);
-
-    await Promise.all(derived.cells.flatMap((c) => {
-      const v = have.get(c.key);
-      if (!v) return [];
-      const next = form.barcodes?.[c.key]?.trim() || null;
-      return next === (v.barcode ?? null) ? [] : [api.variants.update(v.id, { barcode: next })];
-    }));
-
-    for (const v of plan.remove) {
-      try {
-        await api.variants.remove(v.id);
-      } catch (e) {
-        // The ledger has history for this cell, so deletion is refused: hide it instead and keep the history.
-        if (e instanceof ApiError && e.code === 'CONFLICT') await api.variants.update(v.id, { isActive: false });
-        else throw e;
-      }
-    }
   };
 
   /** Push per-variant cost/price overrides after the product exists. */
