@@ -370,7 +370,7 @@ export const settings: Settings = {
   ],
   colorPresets: Object.values(COLORS),
   receiptHeader: 'Tagamo3 · 02 2735 1180', receiptFooter: 'Exchanges within 14 days with receipt. Thank you.', receiptShowLogo: true,
-  sessionIdleHours: 12, passwordRotationDays: 90, lockoutEnabled: true, largeRefundAlert: 100000,
+  sessionIdleHours: 72, passwordRotationDays: 90, lockoutEnabled: true, largeRefundAlert: 100000,
 };
 
 /* ---------- Notifications ---------- */

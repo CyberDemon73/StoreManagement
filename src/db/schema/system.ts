@@ -35,7 +35,7 @@ export const settings = pgTable(
     receiptFooter: text('receipt_footer'),
     sizePresets: jsonb('size_presets').$type<{ name: string; sizes: string[] }[]>().notNull().default([]),
     colorPresets: jsonb('color_presets').$type<{ name: string; hex: string }[]>().notNull().default([]),
-    sessionIdleHours: integer('session_idle_hours').notNull().default(12),
+    sessionIdleHours: integer('session_idle_hours').notNull().default(72),
     sessionAbsoluteDays: integer('session_absolute_days').notNull().default(30),
     dateFormat: text('date_format').notNull().default('DD/MM/YYYY'),
     requirePhoneOnTransfer: boolean('require_phone_on_transfer').notNull().default(false),
