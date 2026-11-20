@@ -30,7 +30,7 @@ export function Field({ label, htmlFor, help, error, trailing, className, childr
 }
 
 /* ---------- Input ---------- */
-const CONTROL = 'flex w-full items-center gap-2 rounded-input border border-line bg-surface px-3 text-ink transition-colors focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent-soft';
+const CONTROL = 'control-field flex w-full min-w-0 items-center gap-2 rounded-input border border-line bg-surface px-3 text-ink transition-colors focus-within:border-accent focus-within:ring-[3px] focus-within:ring-accent-soft';
 export interface InputProps extends Omit<InputHTMLAttributes<HTMLInputElement>, 'size'> {
   leading?: ReactNode;
   trailing?: ReactNode;

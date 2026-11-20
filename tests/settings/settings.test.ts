@@ -37,7 +37,7 @@ describe('GET /settings', () => {
       allowNegativeStock: false,
       requirePhoneOnTransfer: false,
       receiptShowLogo: true,
-      sessionIdleHours: 12,
+      sessionIdleHours: 72,
       largeRefundAlert: 100000,
       sizePresets: [],
       colorPresets: [],
@@ -201,5 +201,30 @@ describe('PATCH /settings', () => {
     const s = await createUser(db, { role: 'SELLER' });
     const res = await patch(await sessionCookieFor(db, s.id), { storeName: 'X' });
     expect(res.status).toBe(403);
+  });
+});
+
+describe('session length settings', () => {
+  it('accepts every option the Security screen offers (12, 24, 72 hours)', async () => {
+    const { cookie } = await managerCookie();
+    for (const hours of [12, 24, 72]) {
+      const res = await patch(cookie, { sessionIdleHours: hours });
+      expect(res.status, `${hours}h`).toBe(200);
+      expect((await res.json()).sessionIdleHours).toBe(hours);
+    }
+  });
+
+  it('rejects an idle timeout above 72 hours, so a 7-day option cannot be saved', async () => {
+    const { cookie } = await managerCookie();
+    const res = await patch(cookie, { sessionIdleHours: 168 });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields).toHaveProperty('sessionIdleHours');
+  });
+
+  it('refuses 72 idle hours when the absolute length is shorter than three days', async () => {
+    const { cookie } = await managerCookie();
+    const res = await patch(cookie, { sessionIdleHours: 72, sessionAbsoluteDays: 2 });
+    expect(res.status).toBe(400);
+    expect((await res.json()).error.fields.sessionIdleHours).toMatch(/cannot exceed/);
   });
 });

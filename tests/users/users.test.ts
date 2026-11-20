@@ -134,9 +134,55 @@ describe('POST /users', () => {
       method: 'POST',
       path: '/api/v1/users',
       cookie: m.cookie,
-      body: { name: 'X', email: 'x@example.com', role: 'SELLER', mode: 'TEMP', password: 'nope' },
+      body: { name: 'X', email: 'x@example.com', role: 'SELLER', mode: 'TEMP', pin: '1234' },
     });
     expect(res.status).toBe(400);
+  });
+
+  it('TEMP with an admin-chosen password stores it, returns no temporaryPassword, forces a change by default', async () => {
+    const m = await actor('MANAGER');
+    const res = await call(createUserRoute, {
+      method: 'POST',
+      path: '/api/v1/users',
+      cookie: m.cookie,
+      body: { name: 'Chosen', email: 'chosen@example.com', role: 'SELLER', mode: 'TEMP', password: 'Avenue-Till-2026' },
+    });
+    expect(res.status).toBe(201);
+    const body = await res.json();
+    expect(body).not.toHaveProperty('temporaryPassword');
+    expect(body.user.mustChangePassword).toBe(true);
+    const row = await roleOf(body.user.id);
+    expect(await verifyPassword(row!.passwordHash, 'Avenue-Till-2026')).toBe(true);
+    const [entry] = await getDb().select().from(auditLog).where(eq(auditLog.action, 'user.create'));
+    expect(JSON.stringify(entry)).not.toContain('Avenue-Till-2026');
+  });
+
+  it('TEMP with mustChange: false lets the chosen password stay', async () => {
+    const m = await actor('MANAGER');
+    const res = await call(createUserRoute, {
+      method: 'POST',
+      path: '/api/v1/users',
+      cookie: m.cookie,
+      body: { name: 'Keeps', email: 'keeps@example.com', role: 'SELLER', mode: 'TEMP', password: 'Avenue-Till-2026', mustChange: false },
+    });
+    expect(res.status).toBe(201);
+    expect((await res.json()).user.mustChangePassword).toBe(false);
+  });
+
+  it('a chosen password that is too short → 400 fields.password; INVITE with a password → 400', async () => {
+    const m = await actor('MANAGER');
+    const short = await call(createUserRoute, {
+      method: 'POST', path: '/api/v1/users', cookie: m.cookie,
+      body: { name: 'S', email: 's@example.com', role: 'SELLER', mode: 'TEMP', password: 'short' },
+    });
+    expect(short.status).toBe(400);
+    expect((await short.json()).error.fields.password).toBeTruthy();
+    const invite = await call(createUserRoute, {
+      method: 'POST', path: '/api/v1/users', cookie: m.cookie,
+      body: { name: 'I', email: 'i@example.com', role: 'SELLER', mode: 'INVITE', password: 'Avenue-Till-2026' },
+    });
+    expect(invite.status).toBe(400);
+    expect(await getDb().select().from(users).where(eq(users.email, 'i@example.com'))).toHaveLength(0);
   });
 
   it('INVITE mode creates an INVITED user and emails a 48 h invitation link', async () => {
@@ -333,6 +379,31 @@ describe('POST /users/:id/reset-password', () => {
     const res = await post(resetPassword, a.id, m.cookie, { mode: 'TEMP' }, '/reset-password');
     expect(res.status).toBe(403);
   });
+
+  it('TEMP with a chosen password sets it, revokes sessions, and honours mustChange: false', async () => {
+    const m = await actor('MANAGER');
+    const s = await createUser(getDb(), { role: 'SELLER' });
+    await sessionCookieFor(getDb(), s.id);
+    const res = await post(resetPassword, s.id, m.cookie, { mode: 'TEMP', password: 'New-Shop-Pass-77', mustChange: false }, '/reset-password');
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({});
+    const row = await roleOf(s.id);
+    expect(row?.mustChangePassword).toBe(false);
+    expect(await verifyPassword(row!.passwordHash, 'New-Shop-Pass-77')).toBe(true);
+    expect(await sessionCount(s.id)).toBe(0);
+    const [entry] = await getDb().select().from(auditLog).where(eq(auditLog.action, 'user.reset_password'));
+    expect(JSON.stringify(entry)).not.toContain('New-Shop-Pass-77');
+    expect(entry?.after).toMatchObject({ mode: 'TEMP', chosen: true, mustChange: false });
+  });
+
+  it('EMAIL with a password → 400, nothing changes', async () => {
+    const m = await actor('MANAGER');
+    const s = await createUser(getDb(), { role: 'SELLER' });
+    const before = (await roleOf(s.id))!.passwordHash;
+    const res = await post(resetPassword, s.id, m.cookie, { mode: 'EMAIL', password: 'New-Shop-Pass-77' }, '/reset-password');
+    expect(res.status).toBe(400);
+    expect((await roleOf(s.id))!.passwordHash).toBe(before);
+  });
 });
 
 describe('POST /users/:id/revoke-sessions', () => {
@@ -420,7 +491,7 @@ describe('peer password resets are visible', () => {
     expect(toTarget[0]!.text).not.toContain(temporaryPassword);
 
     const [entry] = await db.select().from(auditLog).where(eq(auditLog.action, 'user.reset_password'));
-    expect(entry?.after).toEqual({ mode: 'TEMP', targetRole: 'SELLER' });
+    expect(entry?.after).toEqual({ mode: 'TEMP', targetRole: 'SELLER', chosen: false, mustChange: true });
   });
 
   it('EMAIL mode: one email naming the actor, admins notified', async () => {

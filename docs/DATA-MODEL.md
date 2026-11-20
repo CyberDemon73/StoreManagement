@@ -99,7 +99,7 @@ settings  (single row: id integer pk default 1, check(id = 1))
   low_stock_default int default 3, sale_number_prefix text default 'AS',
   seller_discount_cap_pct numeric(5,2) default 10, allow_negative_stock bool default false,
   receipt_header text, receipt_footer text, size_presets jsonb, color_presets jsonb,
-  session_idle_hours int default 12, session_absolute_days int default 30, updated_at
+  session_idle_hours int default 72, session_absolute_days int default 30, updated_at
 
 audit_log
   id, user_id fk null, action text (e.g. 'sale.create'), entity text, entity_id uuid null,

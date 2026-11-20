@@ -16,3 +16,9 @@ function padTo(value: string, length: number): string {
 export function defaultBaseSku(brandName: string, productName: string): string {
   return `${padTo(skuPart(brandName), 2)}-${padTo(skuPart(productName), 3)}`;
 }
+
+/** What the form shows before save: empty until both brand and name are known (the server rejects a missing brand anyway). */
+export function previewBaseSku(brandName: string | undefined, productName: string): string {
+  if (!brandName || !productName.trim()) return '';
+  return defaultBaseSku(brandName, productName);
+}

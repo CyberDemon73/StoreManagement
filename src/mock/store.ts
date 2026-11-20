@@ -12,6 +12,7 @@ import type {
   VariantWithProduct, Role,
 } from '@/types';
 import { stockStatus } from '@/lib/format';
+import { defaultBaseSku } from '@/lib/sku';
 
 let counter = 50_000;
 const uid = (p: string) => `${p}_${(counter++).toString(36)}`;
@@ -149,12 +150,18 @@ export function getProduct(id: string): ProductDetail {
 function uniqColors(cs: ColorRef[]): ColorRef[] { const m = new Map(cs.map((c) => [c.name, c])); return [...m.values()]; }
 
 export interface CreateProductInput {
-  name: string; brandId: string; categoryId: string; description?: string; baseSku?: string; images?: string[]; defaultCost?: number; defaultPrice: number; tags?: string[];
+  name: string; brandId: string; categoryId: string; description?: string; images?: string[]; defaultCost?: number; defaultPrice: number; tags?: string[];
   variants?: { sizes: string[]; colors: ColorRef[]; initialQty?: Record<string, number> | number; barcodes?: Record<string, string>; costPrice?: number; sellPrice?: number };
 }
+/** Same rule as the server: brand + name stem, then -2, -3… while taken. */
+function freeBaseSku(brandName: string, productName: string): string {
+  const stem = defaultBaseSku(brandName, productName);
+  let candidate = stem;
+  for (let n = 2; D.products.some((p) => p.baseSku === candidate); n++) candidate = `${stem}${n}`;
+  return candidate;
+}
 export function createProduct(input: CreateProductInput, userId: string): ProductDetail {
-  const baseSku = input.baseSku?.trim() || `${(brandOf(input.brandId)?.name ?? 'XX').slice(0, 2).toUpperCase()}-${input.name.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase()}`;
-  if (D.products.some((p) => p.baseSku === baseSku)) throw new MockError('CONFLICT', 'Base SKU already used', 409, { baseSku: 'Already used by another product' });
+  const baseSku = freeBaseSku(brandOf(input.brandId)?.name ?? '', input.name);
   const id = uid('p');
   const now = nowIso();
   const p: Product = { id, name: input.name, brandId: input.brandId, categoryId: input.categoryId, description: input.description, baseSku, images: input.images ?? [], defaultCost: input.defaultCost, defaultPrice: input.defaultPrice, status: 'ACTIVE', tags: input.tags ?? [], createdBy: userId, createdAt: now, updatedAt: now };

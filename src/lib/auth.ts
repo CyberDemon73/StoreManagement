@@ -10,7 +10,7 @@ import { apiUserLimiter, enforce } from './ratelimit';
 
 export const SESSION_COOKIE = '__Host-as_session';
 const IDLE_TOUCH_INTERVAL_MS = 5 * 60_000;
-const DEFAULT_IDLE_HOURS = 12;
+const DEFAULT_IDLE_HOURS = 72;
 const DEFAULT_ABSOLUTE_DAYS = 30;
 
 export interface AuthUser {

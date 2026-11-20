@@ -8,6 +8,7 @@ import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { Check, ChevronDown, CircleAlert, ImagePlus, X } from 'lucide-react';
 import { cn } from '@/lib/cn';
 import { api } from '@/lib/api';
+import { MAX_PICK_BYTES, shrinkForUpload } from '@/lib/image-resize';
 import { formatMoney, formatPct, marginPct } from '@/lib/format';
 import { Button } from '@/components/ui/Button';
 import { Checkbox, Field, Input, MoneyInput, Select, Textarea } from '@/components/ui/Field';
@@ -17,10 +18,11 @@ import { KpiCard } from '@/components/ui/Card';
 import { VariantMatrix } from '@/components/app/VariantMatrix';
 import { BarcodeCaptureButton } from '@/components/app/BarcodeScanner';
 import { hexFromColorName } from '@/lib/color-name';
+import { buildSku, previewBaseSku } from '@/lib/sku';
 import { colorChoices } from '@/lib/colors';
 import { sizeGroups } from '@/lib/sizes';
 import type { Brand, Category, ColorRef, Settings } from '@/types';
-import { type Derived, type FormErrors, type ProductFormState, type SectionCheck, variantSku } from './product-form';
+import { type Derived, type FormErrors, type ProductFormState, type SectionCheck } from './product-form';
 
 export interface SectionProps { form: ProductFormState; set: (patch: Partial<ProductFormState>) => void; errors: FormErrors }
 
@@ -35,12 +37,13 @@ export function SectionCard({ title, id, children, hint }: { title: string; id: 
 }
 
 /* ---------- 1 · Basics ---------- */
-export function BasicsSection({ form, set, errors, brands, categories, onCreateBrand }: SectionProps & { brands: Brand[]; categories: Category[]; onCreateBrand: (name: string) => Promise<void> }) {
+export function BasicsSection({ form, set, errors, brands, categories, onCreateBrand, isEdit }: SectionProps & { brands: Brand[]; categories: Category[]; onCreateBrand: (name: string) => Promise<void>; isEdit: boolean }) {
   const [tag, setTag] = useState('');
   const uid = useId();
   const addTag = () => { const t = tag.trim().replace(/,+$/, ''); if (t && !form.tags.includes(t)) set({ tags: [...form.tags, t] }); setTag(''); };
   const firstSize = form.sizes[0] ?? 'M';
   const firstColor = form.colors[0]?.name ?? 'Black';
+  const skuPreview = isEdit ? '' : previewBaseSku(brands.find((b) => b.id === form.brandId)?.name, form.name);
   return (
     <>
       <Field label="Product name" htmlFor={`${uid}-name`} error={errors.name}><Input id={`${uid}-name`} value={form.name} onChange={(e) => set({ name: e.target.value })} placeholder="e.g. Linen Shirt Relaxed" invalid={!!errors.name} autoComplete="off" /></Field>
@@ -51,9 +54,16 @@ export function BasicsSection({ form, set, errors, brands, categories, onCreateB
         <Field label="Category" htmlFor={`${uid}-cat`} error={errors.categoryId}>
           <Select id={`${uid}-cat`} value={form.categoryId} onChange={(e) => set({ categoryId: e.target.value })} invalid={!!errors.categoryId}><option value="">Choose a category</option>{categories.filter((c) => c.isActive).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</Select>
         </Field>
-        <Field label="Base SKU" htmlFor={`${uid}-sku`} error={errors.baseSku} help={<span className="tabular">Variant SKUs: {variantSku(form.baseSku.trim(), firstSize, firstColor)}</span>}>
-          <Input id={`${uid}-sku`} value={form.baseSku} onChange={(e) => set({ baseSku: e.target.value.toUpperCase() })} placeholder="Auto from brand + name" invalid={!!errors.baseSku} className="tabular" autoComplete="off" />
-        </Field>
+        {isEdit ? (
+          <Field label="Base SKU" htmlFor={`${uid}-sku`} error={errors.baseSku} help={<span className="tabular">Variant SKUs: {buildSku(form.baseSku.trim(), firstSize, firstColor)}</span>}>
+            <Input id={`${uid}-sku`} value={form.baseSku} onChange={(e) => set({ baseSku: e.target.value.toUpperCase() })} invalid={!!errors.baseSku} className="tabular" autoComplete="off" />
+          </Field>
+        ) : (
+          // Created by the server on save, so it is shown, never typed. The preview matches the server's rule; a clash adds -2, -3…
+          <Field label="Base SKU" htmlFor={`${uid}-sku`} help={<span className="tabular">{skuPreview ? <>Variant SKUs: {buildSku(skuPreview, firstSize, firstColor)}</> : 'Created automatically from brand and name when you save'}</span>}>
+            <p id={`${uid}-sku`} className="tabular flex min-h-10 items-center rounded-input border border-line bg-surface px-3 text-sm font-medium text-ink-2">{skuPreview || '—'}</p>
+          </Field>
+        )}
       </div>
       <Field label="Description" htmlFor={`${uid}-desc`}><Textarea id={`${uid}-desc`} value={form.description} onChange={(e) => set({ description: e.target.value })} placeholder="Fabric, fit, care — what a seller needs to know." /></Field>
       <Field label="Tags" htmlFor={`${uid}-tags`} help="Press Enter or comma to add.">
@@ -71,15 +81,15 @@ export function ImagesSection({ form, set, tint }: Pick<SectionProps, 'form' | '
   const inputRef = useRef<HTMLInputElement>(null);
   const [over, setOver] = useState(false);
   const [uploadError, setUploadError] = useState<string>();
-  // POST /uploads (≤ 4 MB, jpeg/png/webp); the mock keeps a local object URL instead.
+  // Picks up to 50 MB are shrunk on the device first: POST /uploads only takes ≤ 4 MB (Vercel body cap).
   const addFiles = async (files: FileList | null) => {
     if (!files) return;
     setUploadError(undefined);
-    const accepted = Array.from(files).filter((f) => f.type.startsWith('image/') && f.size <= 4 * 1024 * 1024);
-    if (accepted.length < files.length) setUploadError('Only JPG, PNG or WebP up to 4 MB are accepted.');
+    const accepted = Array.from(files).filter((f) => f.type.startsWith('image/') && f.size <= MAX_PICK_BYTES);
+    if (accepted.length < files.length) setUploadError('Only images up to 50 MB are accepted.');
     const urls: string[] = [];
     for (const f of accepted) {
-      try { urls.push((await api.uploads.image(f)).url); }
+      try { urls.push((await api.uploads.image(await shrinkForUpload(f))).url); }
       catch (e) {
         const m = (e as Error).message;
         setUploadError(/storage not configured/i.test(m) ? 'Image uploads are not configured on this server (missing BLOB_READ_WRITE_TOKEN). Add the token and try again.' : m);
@@ -109,7 +119,7 @@ export function ImagesSection({ form, set, tint }: Pick<SectionProps, 'form' | '
         </label>
       </div>
       {uploadError && <p role="alert" className="text-xs text-danger-ink">{uploadError}</p>}
-      <p className="text-xs text-ink-2">First image is the cover · JPG/PNG/WebP up to 4 MB · 1:1 recommended. Images upload as you add them.</p>
+      <p className="text-xs text-ink-2">First image is the cover · JPG/PNG/WebP up to 50 MB · 1:1 recommended. Images upload as you add them.</p>
     </>
   );
 }

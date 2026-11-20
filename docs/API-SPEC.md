@@ -27,7 +27,7 @@ Conventions
 | Method | Path | Perm | Notes |
 |---|---|---|---|
 | GET | /products | products.read | `q, brandId, categoryId, size, color, stock=in|low|out, minPrice, maxPrice, status, sort=name|updated|price|qty (+`-` for desc), page, pageSize`. Each item includes `brand`, `category`, `variantCount`, `totalQty`, `minPrice`, `maxPrice`, `lowStock: bool`, `coverImage` |
-| POST | /products | products.write | `{ name, brandId, categoryId, description?, baseSku?, images?, defaultCost?, defaultPrice, tags?, variants?: { sizes: string[], colors: {name,hex}[], initialQty?: number, costPrice?, sellPrice? } }` → creates product + matrix |
+| POST | /products | products.write | `{ name, brandId, categoryId, description?, images?, defaultCost?, defaultPrice, tags?, variants?: { sizes: string[], colors: {name,hex}[], initialQty?: number, costPrice?, sellPrice? } }` → creates product + matrix |
 | GET | /products/:id | products.read | includes `variants[]` |
 | PATCH | /products/:id | products.write | partial of POST body minus variants |
 | POST | /products/:id/archive | products.write | and `/unarchive` |
@@ -40,7 +40,7 @@ Conventions
 | GET/POST/PATCH | /brands, /brands/:id | catalog.read / catalog.write | `{ name, logoUrl?, isActive? }`; GET includes `productCount` |
 | GET/POST/PATCH | /categories, /categories/:id | catalog.read / catalog.write | `{ name, parentId? }` |
 | GET/POST/PATCH | /suppliers, /suppliers/:id | catalog.read / catalog.write | |
-| POST | /uploads | products.write | multipart image ≤ 4 MB (Vercel request bodies are capped at 4.5 MB) → `{ url }` |
+| POST | /uploads | products.write | multipart image ≤ 4 MB (Vercel request bodies are capped at 4.5 MB; the app accepts picks up to 50 MB and shrinks them on the device to ≤ 2000 px first) → `{ url }` |
 | POST | /products/import | export.csv | multipart field `file` (CSV ≤ 2 MB, ≤ 5,000 rows; columns `name, brand, category, size, color, colorHex?, price, cost?, qty?, barcode?`, unknown columns ignored; row 2 = first data row). `?dryRun=1` → 200 `{ rows, ok, errors: [{ row, message, data }] }`, no writes. Without dryRun: all-or-nothing → 201 `{ rows, ok, errors: [], created: { products, variants } }`, or 400 `{ error, rows, ok, errors }` writing nothing. Opening qty booked as INITIAL movements |
 | GET | /products/export | export.csv | `text/csv` (BOM, formula-neutralised), one row per active variant: import columns + `sku`; re-imports unchanged |
 
@@ -92,10 +92,10 @@ Conventions
 | Method | Path | Perm | Notes |
 |---|---|---|---|
 | GET | /users | users.manage | `User[]` with `roles`, `sessions` (active count), `lastLoginAt` |
-| POST | /users | users.manage | `{ name, email, role, mode: 'INVITE'|'TEMP' }` → 201 `{ user, temporaryPassword? }`. INVITE emails a 48 h link (status INVITED); TEMP returns a 16-char password once and sets `mustChangePassword`. Only an ADMIN may create an ADMIN. Duplicate email → 409 `fields.email` |
+| POST | /users | users.manage | `{ name, email, role, mode: 'INVITE'|'TEMP', password?, mustChange? }` → 201 `{ user, temporaryPassword? }`. INVITE emails a 48 h link (status INVITED); TEMP sets the admin-chosen `password` (passwordSchema) or, without one, returns a generated 16-char password once; `mustChangePassword` = `mustChange` (default true). `password`/`mustChange` with INVITE → 400. Only an ADMIN may create an ADMIN. Duplicate email → 409 `fields.email` |
 | PATCH | /users/:id | users.manage | `{ name?, role? }` non-empty; to/from ADMIN or on an ADMIN account: ADMIN only (403); last active ADMIN / own role → 409; role change revokes sessions and reset links |
 | POST | /users/:id/disable, /enable | users.manage | disable: not self, not last ADMIN (409); revokes sessions and reset links. enable restores INVITED for never-accepted invites |
-| POST | /users/:id/reset-password | users.manage | `{ mode: 'EMAIL'|'TEMP' }` → `{ temporaryPassword? }`. Kills old reset links and sessions; emails the target and notifies every ADMIN (`ACCOUNT_RESET`). EMAIL on an INVITED user re-sends the invite; TEMP on INVITED → 409 |
+| POST | /users/:id/reset-password | users.manage | `{ mode: 'EMAIL'|'TEMP', password?, mustChange? }` → `{ temporaryPassword? }` (only when TEMP generated one). TEMP with `password` sets that password; `mustChange` defaults to true; both fields with EMAIL → 400. Kills old reset links and sessions; emails the target and notifies every ADMIN (`ACCOUNT_RESET`). EMAIL on an INVITED user re-sends the invite; TEMP on INVITED → 409 |
 | POST | /users/:id/revoke-sessions | users.manage | 204 |
 | DELETE | /users/:id | users.manage | 204. Only when the user has no sales, voids, returns, purchases, stock movements or counts (else 409: disable instead). Not yourself; ADMIN accounts by an ADMIN; never the last active ADMIN. Audited `user.delete`. GET /users rows carry `deletable` |
 | GET | /settings | auth | `settings.read.full` → full `Settings` incl. `nextSaleNumber`; others → public subset |

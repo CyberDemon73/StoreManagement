@@ -13,7 +13,7 @@ export interface Crumb { label: string; href?: string }
  * Page title row. On mobile the title is portalled into the top bar; on desktop it renders a
  * header row with breadcrumb and actions.
  */
-export function PageHeader({ title, crumbs, actions, description, back, className, children, compactTitle }: { title: ReactNode; crumbs?: Crumb[]; actions?: ReactNode; description?: ReactNode; back?: string | true; className?: string; children?: ReactNode; compactTitle?: string }) {
+export function PageHeader({ title, crumbs, actions, description, back, className, children, compactTitle, wide }: { wide?: boolean; title: ReactNode; crumbs?: Crumb[]; actions?: ReactNode; description?: ReactNode; back?: string | true; className?: string; children?: ReactNode; compactTitle?: string }) {
   const [slot, setSlot] = useState<HTMLElement | null>(null);
   useEffect(() => { setSlot(document.getElementById('page-title-slot')); }, []);
   const router = useRouter();
@@ -24,7 +24,7 @@ export function PageHeader({ title, crumbs, actions, description, back, classNam
         <div className="flex items-center gap-1 md:hidden">{backBtn}<h1 className="truncate text-[17px] font-semibold">{compactTitle ?? title}</h1></div>,
         slot,
       )}
-      <div className={cn('flex flex-col gap-3 px-4 pt-4 md:flex-row md:items-end md:justify-between md:px-6 md:pt-6', className)}>
+      <div className={cn('mx-auto flex w-full flex-col gap-3 px-4 pt-4 md:flex-row md:items-end md:justify-between md:px-6 md:pt-6', !wide && 'max-w-[1600px]', className)}>
         <div className="hidden min-w-0 items-start gap-2 md:flex">
           {backBtn}
           <div className="min-w-0">

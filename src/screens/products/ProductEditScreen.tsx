@@ -6,7 +6,7 @@
  * POST /products/:id/variants (new sizes/colors on edit) · PATCH /variants/:id (per-variant overrides).
  * Layout: desktop single page with sections 1–4 and a sticky review rail; mobile 5-step stepper.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { api, ApiError } from '@/lib/api';
 import { useApi, useBreakpoint, useLocalStorage } from '@/lib/use-api';
@@ -18,7 +18,7 @@ import { Stepper } from '@/components/ui/Controls';
 import { ErrorState, Skeleton } from '@/components/ui/States';
 import { useToast } from '@/components/ui/Toast';
 import type { ColorRef } from '@/types';
-import { checklist, derive, DRAFT_KEY, type DraftRecord, EMPTY_FORM, type FormErrors, formFromProduct, type ProductFormState, STEPS, suggestBaseSku, validate } from './product-form';
+import { checklist, derive, DRAFT_KEY, type DraftRecord, EMPTY_FORM, type FormErrors, formFromProduct, type ProductFormState, STEPS, validate } from './product-form';
 import { useCatalog } from './products-shared';
 import { BasicsSection, ImagesSection, PricingSection, ReviewRail, SectionCard, VariantsSection } from './ProductEditSections';
 import { isFootwearCategory } from '@/lib/sizes';
@@ -48,20 +48,14 @@ export function ProductEditScreen({ id }: { id?: string }) {
   const [step, setStep] = useState(0);
   const [draft, setDraft] = useLocalStorage<DraftRecord | null>(DRAFT_KEY, null);
   const [draftOffered, setDraftOffered] = useState(false);
-  const skuAuto = useRef(true);
 
-  useEffect(() => { if (product.data) { setForm(formFromProduct(product.data)); skuAuto.current = false; } }, [product.data]);
+  useEffect(() => { if (product.data) setForm(formFromProduct(product.data)); }, [product.data]);
 
   const set = useCallback((patch: Partial<ProductFormState>) => {
     setTouched(true);
     setServerErrors((e) => (patch.baseSku !== undefined ? { ...e, baseSku: undefined } : e));
-    setForm((f) => {
-      const next = { ...f, ...patch };
-      if (!isEdit && skuAuto.current && (patch.name !== undefined || patch.brandId !== undefined)) next.baseSku = suggestBaseSku(brands.find((b) => b.id === next.brandId)?.name, next.name);
-      if (patch.baseSku !== undefined) skuAuto.current = patch.baseSku === '';
-      return next;
-    });
-  }, [isEdit, brands]);
+    setForm((f) => ({ ...f, ...patch }));
+  }, []);
 
   const errors = useMemo<FormErrors>(() => ({ ...validate(form), ...serverErrors }), [form, serverErrors]);
   const shownErrors: FormErrors = submitted || touched ? errors : {};
@@ -74,7 +68,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
   };
 
   const saveDraft = () => { const rec = { form, savedAt: new Date().toISOString() }; setDraft(rec); toast({ kind: 'success', title: 'Draft saved', body: 'Stored on this device only.' }); };
-  const restoreDraft = () => { if (draft) { setForm(draft.form); skuAuto.current = false; setTouched(true); } setDraftOffered(true); };
+  const restoreDraft = () => { if (draft) { setForm(draft.form); setTouched(true); } setDraftOffered(true); };
 
   const submit = async () => {
     setSubmitted(true);
@@ -87,11 +81,11 @@ export function ProductEditScreen({ id }: { id?: string }) {
     }
     setSaving(true);
     try {
-      const base = { name: form.name.trim(), brandId: form.brandId, categoryId: form.categoryId, description: form.description.trim() || undefined, baseSku: form.baseSku.trim() || undefined, defaultCost: form.defaultCost, defaultPrice: form.defaultPrice ?? 0, tags: form.tags };
+      const base = { name: form.name.trim(), brandId: form.brandId, categoryId: form.categoryId, description: form.description.trim() || undefined, defaultCost: form.defaultCost, defaultPrice: form.defaultPrice ?? 0, tags: form.tags };
       const images = form.images.filter((u) => !u.startsWith('blob:'));
       let productId = id;
       if (isEdit && id && product.data) {
-        await api.products.update(id, { ...base, images });
+        await api.products.update(id, { ...base, baseSku: form.baseSku.trim() || undefined, images });
         const newSizes = form.sizes.filter((s) => !product.data!.sizes.includes(s));
         const newColors: ColorRef[] = form.colors.filter((c) => !product.data!.colors.some((x) => x.name === c.name));
         if (newSizes.length || newColors.length) await api.products.addVariants(id, { sizes: form.sizes, colors: form.colors });
@@ -148,7 +142,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
           {!isEdit && draft && !draftOffered && <DraftBanner savedAt={draft.savedAt} onRestore={restoreDraft} onDiscard={() => { setDraft(null); setDraftOffered(true); }} />}
           {loadingForm ? <Skeleton className="h-64 rounded-card" /> : (
             <SectionCard id={`m-${step}`} title={`${step + 1} · ${stepLabel}`}>
-              {step === 0 && <BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} />}
+              {step === 0 && <BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} isEdit={isEdit} />}
               {step === 1 && <ImagesSection form={form} set={set} tint={tint} />}
               {step === 2 && <VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} footwear={footwear} />}
               {step === 3 && <PricingSection form={form} set={set} errors={shownErrors} derived={derived} />}
@@ -168,7 +162,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
   /* ---------- desktop / tablet ---------- */
   return (
     <>
-      <PageHeader title={title} back="/products" crumbs={[{ label: 'Products', href: '/products' }, { label: isEdit ? 'Edit' : 'New product' }]}
+      <PageHeader wide title={title} back="/products" crumbs={[{ label: 'Products', href: '/products' }, { label: isEdit ? 'Edit' : 'New product' }]}
         actions={<>
           {draftLabel && <span className="text-xs text-ink-2">{draftLabel}</span>}
           <LinkButton href={isEdit && id ? `/products/${id}` : '/products'}>Cancel</LinkButton>
@@ -179,7 +173,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
         {loadingForm ? <div className="grid gap-4 xl:grid-cols-[1fr_320px]"><div className="flex flex-col gap-4"><Skeleton className="h-64 rounded-card" /><Skeleton className="h-40 rounded-card" /></div><Skeleton className="h-80 rounded-card" /></div> : (
           <form id="product-form" onSubmit={(e) => { e.preventDefault(); void submit(); }} className="grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_320px]">
             <div className="flex min-w-0 flex-col gap-4">
-              <SectionCard id="s-basics" title="1 · Basics"><BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} /></SectionCard>
+              <SectionCard id="s-basics" title="1 · Basics"><BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} isEdit={isEdit} /></SectionCard>
               <SectionCard id="s-images" title="2 · Images"><ImagesSection form={form} set={set} tint={tint} /></SectionCard>
               <SectionCard id="s-variants" title="3 · Variants"><VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} footwear={footwear} /></SectionCard>
               <SectionCard id="s-pricing" title="4 · Pricing"><PricingSection form={form} set={set} errors={shownErrors} derived={derived} /></SectionCard>

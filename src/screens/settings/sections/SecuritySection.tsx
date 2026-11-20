@@ -33,7 +33,7 @@ export function SecuritySection({ draft, patch }: SectionProps) {
       <div className="grid gap-3 sm:grid-cols-2">
         <Field label="Session length" htmlFor="sc-sess">
           <Select id="sc-sess" value={String(draft.sessionIdleHours)} onChange={(e) => patch({ sessionIdleHours: parseInt(e.target.value, 10) })}>
-            <option value="12">12 hours</option><option value="24">24 hours</option><option value="168">7 days (remembered devices)</option>
+            <option value="12">12 hours</option><option value="24">24 hours</option><option value="72">3 days</option>
           </Select>
         </Field>
         <Field label="Require password change every" htmlFor="sc-pw">

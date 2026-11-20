@@ -171,7 +171,7 @@ export const api = {
     /** GET /products/:id */
     get: (id: string) => call<ProductDetail>(() => store.getProduct(id), 'GET', `/products/${id}`),
     /** POST /products */
-    create: (input: store.CreateProductInput) => call<ProductDetail>(() => store.createProduct(input, ctx.userId), 'POST', '/products', { ...input, images: httpsOnly(input.images), baseSku: input.baseSku || undefined, description: input.description || undefined }),
+    create: (input: store.CreateProductInput) => call<ProductDetail>(() => store.createProduct(input, ctx.userId), 'POST', '/products', { ...input, images: httpsOnly(input.images), description: input.description || undefined }),
     /** PATCH /products/:id */
     update: (id: string, patch: Partial<Omit<Product, 'id'>>) => call<ProductDetail>(() => store.updateProduct(id, patch, ctx.userId), 'PATCH', `/products/${id}`, { ...pick(patch, ['name', 'brandId', 'categoryId', 'description', 'baseSku', 'defaultCost', 'defaultPrice', 'tags']), ...(patch.images ? { images: httpsOnly(patch.images) } : {}) }),
     /** POST /products/:id/archive | /unarchive */
@@ -310,15 +310,14 @@ export const api = {
     list: () => call<User[]>(() => store.listUsers(), 'GET', '/users'),
     /** DELETE /users/:id → 204. Only for users with no sales or stock history (else 409). */
     remove: (id: string) => call<void>(() => undefined, 'DELETE', `/users/${id}`),
-    /** POST /users */
-    /** POST /users → 201 { user, temporaryPassword? } (TEMP only, shown once). */
-    create: (input: { name: string; email: string; role: Role; mode: 'INVITE' | 'TEMP' }) => call<{ user: User; temporaryPassword?: string }>(() => ({ user: store.createUser(input, ctx.userId) }), 'POST', '/users', input),
+    /** POST /users → 201 { user, temporaryPassword? } (TEMP without a chosen `password` only, shown once). */
+    create: (input: { name: string; email: string; role: Role; mode: 'INVITE' | 'TEMP'; password?: string; mustChange?: boolean }) => call<{ user: User; temporaryPassword?: string }>(() => ({ user: store.createUser(input, ctx.userId) }), 'POST', '/users', input),
     /** PATCH /users/:id */
     update: (id: string, patch: Partial<Pick<User, 'name' | 'role'>>) => call<User>(() => store.updateUser(id, patch, ctx.userId), 'PATCH', `/users/${id}`, pick(patch, ['name', 'role'])),
     /** POST /users/:id/disable | /enable */
     setEnabled: (id: string, enabled: boolean) => call<User>(() => store.updateUser(id, { status: enabled ? 'ACTIVE' : 'DISABLED' }, ctx.userId), 'POST', `/users/${id}/${enabled ? 'enable' : 'disable'}`),
-    /** POST /users/:id/reset-password */
-    resetPassword: (id: string, mode: 'EMAIL' | 'TEMP') => call<{ temporaryPassword?: string }>(() => ({}), 'POST', `/users/${id}/reset-password`, { mode }),
+    /** POST /users/:id/reset-password. TEMP may carry a chosen `password` (else one is generated and returned once). */
+    resetPassword: (id: string, mode: 'EMAIL' | 'TEMP', opts: { password?: string; mustChange?: boolean } = {}) => call<{ temporaryPassword?: string }>(() => ({}), 'POST', `/users/${id}/reset-password`, { mode, ...opts }),
     /** POST /users/:id/revoke-sessions */
     revokeSessions: (id: string) => call<User>(() => store.revokeSessions(id), 'POST', `/users/${id}/revoke-sessions`),
   },

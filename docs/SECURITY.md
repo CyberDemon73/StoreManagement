@@ -4,7 +4,7 @@ The app is public on the internet. Treat every request as hostile until authenti
 
 ## Authentication
 - Passwords: Argon2id via `@node-rs/argon2` (memory 64 MiB, iterations 3, parallelism 1). Min length 10, max 128, no composition rules. Reject the top-10k common passwords (bundled list).
-- Sessions: random 32 bytes, **store SHA-256 hash** in `sessions`, raw token only in the cookie. Cookie `__Host-as_session`: `HttpOnly; Secure; SameSite=Lax; Path=/`. Idle expiry 12 h (sliding, update `last_seen_at` at most once per 5 min), absolute 30 d ("remember") or browser-session otherwise. Rotate token on login and on password change; revoke all on password change / user disable / role change.
+- Sessions: random 32 bytes, **store SHA-256 hash** in `sessions`, raw token only in the cookie. Cookie `__Host-as_session`: `HttpOnly; Secure; SameSite=Lax; Path=/`. Idle expiry 72 h by default, configurable 1–72 h (sliding, update `last_seen_at` at most once per 5 min), absolute 30 d ("remember") or browser-session otherwise. Rotate token on login and on password change; revoke all on password change / user disable / role change.
 - Login flow: constant-time compare; same error message for unknown email and wrong password; always run the hash even for unknown users (dummy hash) to prevent timing enumeration.
 - Lockout: 10 failures per email in 15 min → locked 15 min (`423 LOCKED` with `retryAfter`). Rate limit login 5/min/IP and 10/h/email; `/auth/forgot` 3/h/email, always returns 204.
 - No self-registration. `POST /setup` only when `users` is empty, guarded by a `SETUP_TOKEN` env var as well.
@@ -20,7 +20,7 @@ The app is public on the internet. Treat every request as hostile until authenti
 - Zod `.strict()` on body, query and params. Coerce numbers from query. Max body 1 MB (uploads 4 MB on their route only (Vercel caps request bodies at 4.5 MB)).
 - Search `q`: trim, max 100 chars; passed to parameterised ILIKE only.
 - IDs are UUIDs; validate format before hitting the DB.
-- Uploads: accept `image/jpeg|png|webp` by **magic bytes** (not extension/MIME header), ≤ 4 MB (Vercel request bodies are capped at 4.5 MB), re-encode via `sharp` (fit within 2000 px, reject > 25 MP) to strip metadata, random filename.
+- Uploads: accept `image/jpeg|png|webp` by **magic bytes** (not extension/MIME header), ≤ 4 MB on the wire (Vercel request bodies are capped at 4.5 MB; the client accepts picks up to 50 MB and downscales them in the browser — a convenience, never trusted), re-encode via `sharp` (fit within 2000 px, reject > 25 MP) to strip metadata, random filename.
 - CSV import: parse streaming, max 5,000 rows, cells sanitised against formula injection (`=`, `+`, `-`, `@` prefixes quoted) on export.
 
 ## Transport & headers (middleware)

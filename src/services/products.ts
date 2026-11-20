@@ -96,6 +96,21 @@ async function assertBrand(db: Db, id: string): Promise<{ id: string; name: stri
   return row;
 }
 
+/**
+ * Base SKU for a new product: brand + name stem, then -2, -3… when that stem is taken. Runs inside
+ * the create transaction and holds an advisory lock on the stem, so concurrent creates queue instead of colliding.
+ */
+async function freeBaseSku(db: Db, brandName: string, productName: string): Promise<string> {
+  const stem = defaultBaseSku(brandName, productName);
+  // Serialise creates that share a stem so two transactions never both see the same candidate free.
+  await db.execute(sql`select pg_advisory_xact_lock(hashtext(${'avenue:base-sku:' + stem}))`);
+  for (let n = 1; ; n++) {
+    const candidate = n === 1 ? stem : `${stem}${n}`;
+    const [taken] = await db.select({ id: products.id }).from(products).where(eq(products.baseSku, candidate)).limit(1);
+    if (!taken) return candidate;
+  }
+}
+
 async function assertCategory(db: Db, id: string): Promise<void> {
   const [row] = await db.select({ id: categories.id }).from(categories).where(eq(categories.id, id)).limit(1);
   if (!row) throw new AppError('NOT_FOUND', 'Category not found', { fields: { categoryId: 'Category not found' } });
@@ -107,7 +122,7 @@ export async function createProduct(db: Db, user: AuthUser, input: ProductCreate
     // Inactive brands/categories are still valid references (archiving must not break products).
     const brand = await assertBrand(tx, fields.brandId);
     await assertCategory(tx, fields.categoryId);
-    const baseSku = fields.baseSku ?? defaultBaseSku(brand.name, fields.name);
+    const baseSku = await freeBaseSku(tx, brand.name, fields.name);
     let product: ProductRow | undefined;
     try {
       [product] = await tx
