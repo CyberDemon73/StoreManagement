@@ -5,7 +5,7 @@
  */
 import { matrixKey } from '@/components/app/VariantMatrix';
 import { marginPct } from '@/lib/format';
-import type { ColorRef, ProductDetail } from '@/types';
+import type { ColorRef, ProductDetail, Variant } from '@/types';
 
 export interface VariantOverride { cost?: number; price?: number }
 
@@ -23,7 +23,7 @@ export interface ProductFormState {
   setInitialQty: boolean;
   /** Keyed `size|color` (matrixKey). */
   initialQty: Record<string, number>;
-  /** Optional scanned/typed barcodes keyed `size|color` (new products only). */
+  /** Scanned/typed barcodes keyed `size|color`. On edit they start from the saved barcodes and are sent only on Save. */
   barcodes?: Record<string, string>;
   defaultCost?: number;
   defaultPrice?: number;
@@ -37,13 +37,19 @@ export const STEPS = ['Basics', 'Images', 'Variants', 'Pricing', 'Review'] as co
 
 export function formFromProduct(p: ProductDetail): ProductFormState {
   const overrides: Record<string, VariantOverride> = {};
+  const initialQty: Record<string, number> = {};
+  const barcodes: Record<string, string> = {};
   for (const v of p.variants) {
+    const key = matrixKey(v.size, v.color.name);
+    // On edit the quantity matrix shows what each cell holds now; changes are booked as adjustments on save.
+    initialQty[key] = v.quantity;
+    if (v.barcode) barcodes[key] = v.barcode;
     const o: VariantOverride = {};
     if (v.costPrice !== undefined && v.costPrice !== p.defaultCost) o.cost = v.costPrice;
     if (v.sellPrice !== p.defaultPrice) o.price = v.sellPrice;
-    if (o.cost !== undefined || o.price !== undefined) overrides[matrixKey(v.size, v.color.name)] = o;
+    if (o.cost !== undefined || o.price !== undefined) overrides[key] = o;
   }
-  return { name: p.name, brandId: p.brandId, categoryId: p.categoryId, baseSku: p.baseSku, description: p.description ?? '', tags: [...p.tags], images: [...p.images], sizes: [...p.sizes], colors: p.colors.map((c) => ({ ...c })), setInitialQty: false, initialQty: {}, defaultCost: p.defaultCost, defaultPrice: p.defaultPrice, overrides };
+  return { name: p.name, brandId: p.brandId, categoryId: p.categoryId, baseSku: p.baseSku, description: p.description ?? '', tags: [...p.tags], images: [...p.images], sizes: [...p.sizes], colors: p.colors.map((c) => ({ ...c })), setInitialQty: true, initialQty, barcodes, defaultCost: p.defaultCost, defaultPrice: p.defaultPrice, overrides };
 }
 
 export interface FormErrors { name?: string; brandId?: string; categoryId?: string; baseSku?: string; defaultPrice?: string; defaultCost?: string; variants?: string }
@@ -86,10 +92,36 @@ export function derive(f: ProductFormState): Derived {
     stockRetail += q * price;
     if (o && (o.cost !== undefined || o.price !== undefined) && price < cost) belowCost++;
   }
-  const overrideCount = Object.values(f.overrides).filter((o) => o.cost !== undefined || o.price !== undefined).length;
+  // Only cells still in the matrix count: an override on a removed size or colour must not leak into the totals.
+  const overrideCount = cells.filter((c) => { const o = f.overrides[c.key]; return o !== undefined && (o.cost !== undefined || o.price !== undefined); }).length;
   const margin = f.defaultPrice ? marginPct(f.defaultPrice, f.defaultCost) : undefined;
   const perUnit = f.defaultPrice !== undefined && f.defaultCost !== undefined ? f.defaultPrice - f.defaultCost : undefined;
   return { cells, variantCount: cells.length, units, stockCost, stockRetail, belowCost, overrideCount, margin, perUnit };
+}
+
+export interface EditPlan {
+  /** Removed cells that still hold stock. The save is refused until their quantity is 0. */
+  blocked: { size: string; color: string; quantity: number }[];
+  /** Removed cells with zero stock: deleted on save; if the ledger has history, deactivated instead. */
+  remove: Variant[];
+  /** Hidden cells that are back in the lists: reactivated on save. */
+  reactivate: Variant[];
+}
+
+/** What an Edit save must do about cells that were dropped from, or restored to, the size/colour lists. */
+export function planEditSave(f: ProductFormState, existing: Variant[]): EditPlan {
+  const kept = new Set(f.sizes.flatMap((s) => f.colors.map((c) => matrixKey(s, c.name))));
+  const plan: EditPlan = { blocked: [], remove: [], reactivate: [] };
+  for (const v of existing) {
+    if (kept.has(matrixKey(v.size, v.color.name))) {
+      if (!v.isActive) plan.reactivate.push(v);
+      continue;
+    }
+    if (!v.isActive) continue; // already hidden by an earlier save
+    if (v.quantity > 0) plan.blocked.push({ size: v.size, color: v.color.name, quantity: v.quantity });
+    else plan.remove.push(v);
+  }
+  return plan;
 }
 
 export interface SectionCheck { key: (typeof STEPS)[number]; label: string; ok: boolean; detail?: string }

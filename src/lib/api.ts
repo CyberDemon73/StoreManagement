@@ -189,7 +189,9 @@ export const api = {
 
   variants: {
     /** PATCH /variants/:id (never quantity — use stock.adjust) */
-    update: (id: string, patch: Partial<Pick<Variant, 'sellPrice' | 'costPrice' | 'lowStockThreshold' | 'barcode' | 'isActive' | 'sku'>>) => call<Variant>(() => store.updateVariant(id, patch, ctx.userId), 'PATCH', `/variants/${id}`, pick(patch, ['sellPrice', 'costPrice', 'lowStockThreshold', 'barcode', 'isActive', 'sku'])),
+    update: (id: string, patch: Partial<Pick<Variant, 'sellPrice' | 'costPrice' | 'lowStockThreshold' | 'isActive' | 'sku'>> & { barcode?: string | null }) => call<Variant>(() => store.updateVariant(id, patch as Partial<Variant>, ctx.userId), 'PATCH', `/variants/${id}`, pick(patch, ['sellPrice', 'costPrice', 'lowStockThreshold', 'barcode', 'isActive', 'sku'])),
+    /** DELETE /variants/:id — the server refuses a variant with stock or ledger history (409). */
+    remove: (id: string) => call<void>(() => store.deleteVariant(id, ctx.userId), 'DELETE', `/variants/${id}`),
     /** GET /variants/lookup?barcode|sku */
     lookup: (q: { barcode?: string; sku?: string }) => call<VariantWithProduct>(() => store.lookupVariant(q), 'GET', '/variants/lookup', undefined, q),
     /** GET /products?q (variant-level search used by POS, receive, adjust, labels) */

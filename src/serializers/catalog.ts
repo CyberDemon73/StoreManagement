@@ -211,7 +211,9 @@ export function toProductDetail(
 ): ProductDetailOut {
   const sizes: string[] = [];
   const colors: ColorRef[] = [];
+  // A deactivated size or colour is hidden from the matrix; its cells stay in `variants` for history.
   for (const v of variantRows) {
+    if (!v.isActive) continue;
     if (!sizes.includes(v.size)) sizes.push(v.size);
     if (!colors.some((c) => c.name === v.colorName)) colors.push({ name: v.colorName, hex: v.colorHex });
   }

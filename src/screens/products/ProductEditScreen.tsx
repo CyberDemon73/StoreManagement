@@ -17,8 +17,8 @@ import { Button, LinkButton } from '@/components/ui/Button';
 import { Stepper } from '@/components/ui/Controls';
 import { ErrorState, Skeleton } from '@/components/ui/States';
 import { useToast } from '@/components/ui/Toast';
-import type { ColorRef } from '@/types';
-import { checklist, derive, DRAFT_KEY, type DraftRecord, EMPTY_FORM, type FormErrors, formFromProduct, type ProductFormState, STEPS, validate } from './product-form';
+import type { ColorRef, ProductDetail } from '@/types';
+import { checklist, derive, DRAFT_KEY, type DraftRecord, EMPTY_FORM, type EditPlan, type FormErrors, formFromProduct, planEditSave, type ProductFormState, STEPS, validate } from './product-form';
 import { useCatalog } from './products-shared';
 import { BasicsSection, ImagesSection, PricingSection, ReviewRail, SectionCard, VariantsSection } from './ProductEditSections';
 import { isFootwearCategory } from '@/lib/sizes';
@@ -79,16 +79,21 @@ export function ProductEditScreen({ id }: { id?: string }) {
       if (bp === 'mobile') setStep(v.name || v.brandId || v.categoryId || v.baseSku ? 0 : derived.variantCount === 0 ? 2 : 3);
       return;
     }
+    // Edit: refuse before any write when a removed size/colour still holds stock.
+    const plan = isEdit && product.data ? planEditSave(form, product.data.variants) : undefined;
+    if (plan && plan.blocked.length > 0) {
+      const list = plan.blocked.map((b) => `${b.size} · ${b.color} (${b.quantity})`).join(', ');
+      setServerErrors((e) => ({ ...e, variants: `Set these to 0 before removing them: ${list}` }));
+      toast({ kind: 'error', title: 'Removed variants still have stock', body: list });
+      return;
+    }
     setSaving(true);
     try {
       const base = { name: form.name.trim(), brandId: form.brandId, categoryId: form.categoryId, description: form.description.trim() || undefined, defaultCost: form.defaultCost, defaultPrice: form.defaultPrice ?? 0, tags: form.tags };
       const images = form.images.filter((u) => !u.startsWith('blob:'));
       let productId = id;
-      if (isEdit && id && product.data) {
-        await api.products.update(id, { ...base, baseSku: form.baseSku.trim() || undefined, images });
-        const newSizes = form.sizes.filter((s) => !product.data!.sizes.includes(s));
-        const newColors: ColorRef[] = form.colors.filter((c) => !product.data!.colors.some((x) => x.name === c.name));
-        if (newSizes.length || newColors.length) await api.products.addVariants(id, { sizes: form.sizes, colors: form.colors });
+      if (isEdit && id && product.data && plan) {
+        await saveEdit(id, product.data, base, images, plan);
       } else {
         const created = await api.products.create({ ...base, images, variants: { sizes: form.sizes, colors: form.colors, initialQty: form.setInitialQty ? form.initialQty : 0, barcodes: cleanBarcodes(form), costPrice: form.defaultCost, sellPrice: form.defaultPrice } });
         productId = created.id;
@@ -102,6 +107,54 @@ export function ProductEditScreen({ id }: { id?: string }) {
       if (e instanceof ApiError && e.fields) { setServerErrors(e.fields as FormErrors); if (bp === 'mobile' && e.fields.baseSku) setStep(0); }
       toast({ kind: 'error', title: isEdit ? "Couldn't save the product" : "Couldn't create the product", body: (e as Error).message });
     } finally { setSaving(false); }
+  };
+
+  /**
+   * Edit save, in dependency order: product fields, new size/colour cells (with their barcodes),
+   * quantities as ADJUSTMENT movements, barcodes that changed, then removed zero-stock cells last.
+   * Barcodes are only sent from here, so a wrong scan stays on the form until the user saves.
+   */
+  const saveEdit = async (productId: string, current: ProductDetail, base: Parameters<typeof api.products.update>[1], images: string[], plan: EditPlan) => {
+    await api.products.update(productId, { ...base, baseSku: form.baseSku.trim() || undefined, images });
+
+    const have = new Map(current.variants.map((v) => [matrixKey(v.size, v.color.name), v] as const));
+    const ids = new Map([...have].map(([key, v]) => [key, v.id] as const));
+    const newCells = derived.cells.filter((c) => !have.has(c.key));
+    if (newCells.length > 0) {
+      const newKeys = new Set(newCells.map((c) => c.key));
+      const cleaned = cleanBarcodes(form);
+      const barcodes = cleaned && Object.fromEntries(Object.entries(cleaned).filter(([k]) => newKeys.has(k)));
+      const created = await api.products.addVariants(productId, { sizes: form.sizes, colors: form.colors, barcodes: barcodes && Object.keys(barcodes).length ? barcodes : undefined });
+      for (const v of created) ids.set(matrixKey(v.size, v.color.name), v.id);
+    }
+
+    for (const v of plan.reactivate) await api.variants.update(v.id, { isActive: true });
+
+    const adjustments = derived.cells.flatMap((c) => {
+      const variantId = ids.get(c.key);
+      if (!variantId) return [];
+      const now = have.get(c.key)?.quantity ?? 0;
+      const next = form.initialQty[c.key] ?? now;
+      return next === now ? [] : [{ variantId, newQty: next, reason: 'CORRECTION' as const, note: 'Set on product edit' }];
+    });
+    if (adjustments.length > 0) await api.stock.adjust(adjustments);
+
+    await Promise.all(derived.cells.flatMap((c) => {
+      const v = have.get(c.key);
+      if (!v) return [];
+      const next = form.barcodes?.[c.key]?.trim() || null;
+      return next === (v.barcode ?? null) ? [] : [api.variants.update(v.id, { barcode: next })];
+    }));
+
+    for (const v of plan.remove) {
+      try {
+        await api.variants.remove(v.id);
+      } catch (e) {
+        // The ledger has history for this cell, so deletion is refused: hide it instead and keep the history.
+        if (e instanceof ApiError && e.code === 'CONFLICT') await api.variants.update(v.id, { isActive: false });
+        else throw e;
+      }
+    }
   };
 
   /** Push per-variant cost/price overrides after the product exists. */
@@ -144,7 +197,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
             <SectionCard id={`m-${step}`} title={`${step + 1} · ${stepLabel}`}>
               {step === 0 && <BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} isEdit={isEdit} />}
               {step === 1 && <ImagesSection form={form} set={set} tint={tint} />}
-              {step === 2 && <VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} footwear={footwear} />}
+              {step === 2 && <VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes footwear={footwear} isEdit={isEdit} />}
               {step === 3 && <PricingSection form={form} set={set} errors={shownErrors} derived={derived} />}
               {step === 4 && <ReviewRail checks={checks} derived={derived} isEdit={isEdit} onSave={() => void submit()} onDraft={saveDraft} saving={saving} draftLabel={draftLabel} onJump={(k) => setStep(STEPS.indexOf(k))} />}
             </SectionCard>
@@ -175,7 +228,7 @@ export function ProductEditScreen({ id }: { id?: string }) {
             <div className="flex min-w-0 flex-col gap-4">
               <SectionCard id="s-basics" title="1 · Basics"><BasicsSection form={form} set={set} errors={shownErrors} brands={brands} categories={catalog.categories} onCreateBrand={createBrand} isEdit={isEdit} /></SectionCard>
               <SectionCard id="s-images" title="2 · Images"><ImagesSection form={form} set={set} tint={tint} /></SectionCard>
-              <SectionCard id="s-variants" title="3 · Variants"><VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes={!isEdit} footwear={footwear} /></SectionCard>
+              <SectionCard id="s-variants" title="3 · Variants"><VariantsSection form={form} set={set} errors={shownErrors} settings={catalog.settings} showBarcodes footwear={footwear} isEdit={isEdit} /></SectionCard>
               <SectionCard id="s-pricing" title="4 · Pricing"><PricingSection form={form} set={set} errors={shownErrors} derived={derived} /></SectionCard>
             </div>
             <div className="xl:sticky xl:top-20">

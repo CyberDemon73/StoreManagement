@@ -204,7 +204,7 @@ function PickerMenu({ placeholder, groups, onPick, disabled, invalid, 'aria-labe
   );
 }
 
-export function VariantsSection({ form, set, errors, settings, showBarcodes = false, footwear = false }: SectionProps & { settings: Settings | undefined; showBarcodes?: boolean; footwear?: boolean }) {
+export function VariantsSection({ form, set, errors, settings, showBarcodes = false, footwear = false, isEdit = false }: SectionProps & { settings: Settings | undefined; showBarcodes?: boolean; footwear?: boolean; isEdit?: boolean }) {
   const presets = settings?.sizePresets ?? [];
   const [customSize, setCustomSize] = useState<string | null>(null);
   const [colorName, setColorName] = useState('');
@@ -297,7 +297,7 @@ export function VariantsSection({ form, set, errors, settings, showBarcodes = fa
       <div className="flex flex-col gap-3 rounded-card border border-line bg-surface-2/50 p-3">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium" aria-live="polite">Preview · {form.sizes.length} size{form.sizes.length === 1 ? '' : 's'} × {form.colors.length} color{form.colors.length === 1 ? '' : 's'} = {form.sizes.length * form.colors.length} variant{form.sizes.length * form.colors.length === 1 ? '' : 's'}</p>
-          <Checkbox checked={form.setInitialQty} onChange={(v) => set({ setInitialQty: v })} label="Set initial quantity per cell" />
+          {!isEdit && <Checkbox checked={form.setInitialQty} onChange={(v) => set({ setInitialQty: v })} label="Set initial quantity per cell" />}
         </div>
         {errors.variants && <p className="text-xs text-danger-ink" role="alert">{errors.variants}</p>}
         {orderedSizes.length > 0 && orderedColors.length > 0 ? (
@@ -399,7 +399,7 @@ export function ReviewRail({ checks, derived, isEdit, onSave, onDraft, saving, d
       <Button variant="primary" size="lg" block loading={saving} disabled={!allOk} onClick={onSave}>{isEdit ? 'Save changes' : 'Save product'}</Button>
       {!isEdit && <Button block onClick={onDraft}>Save as draft</Button>}
       {draftLabel && <p className="text-center text-xs text-ink-2">{draftLabel}</p>}
-      <p className="text-xs text-ink-2">{isEdit ? 'Saving updates name, brand, category, SKU, description, tags and default prices. New sizes or colors create variants at quantity 0.' : `Saving creates ${derived.variantCount} variant${derived.variantCount === 1 ? '' : 's'}${derived.units > 0 ? ` and an INITIAL movement of ${derived.units} units` : ''}.`}</p>
+      <p className="text-xs text-ink-2">{isEdit ? 'Saving updates name, brand, category, SKU, description, tags and default prices. New sizes or colors are added; changed quantities are booked as adjustments; removed sizes or colors with no stock are deleted.' : `Saving creates ${derived.variantCount} variant${derived.variantCount === 1 ? '' : 's'}${derived.units > 0 ? ` and an INITIAL movement of ${derived.units} units` : ''}.`}</p>
     </aside>
   );
 }

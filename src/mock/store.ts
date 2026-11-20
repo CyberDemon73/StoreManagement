@@ -210,7 +210,15 @@ export function addVariants(productId: string, input: NonNullable<CreateProductI
   return made;
 }
 
-export function updateVariant(id: string, patch: Partial<Pick<Variant, 'sellPrice' | 'costPrice' | 'lowStockThreshold' | 'barcode' | 'isActive' | 'sku'>>, userId: string): Variant {
+/** Mirrors DELETE /variants/:id: only a cell with no stock and no ledger history can go. */
+export function deleteVariant(id: string, userId: string): void {
+  const v = variant(id);
+  if (v.quantity !== 0 || D.movements.some((m) => m.variantId === id)) throw new MockError('CONFLICT', 'Variant has stock or movements', 409);
+  D.variants.splice(D.variants.indexOf(v), 1);
+  audit(userId, 'product.update', 'Variant', v.sku, 'deleted', { before: { ...v } });
+}
+
+export function updateVariant(id: string, patch: Partial<Omit<Pick<Variant, 'sellPrice' | 'costPrice' | 'lowStockThreshold' | 'isActive' | 'sku'>, never>> & { barcode?: string | null }, userId: string): Variant {
   const v = variant(id);
   const before = { ...v };
   Object.assign(v, patch);
