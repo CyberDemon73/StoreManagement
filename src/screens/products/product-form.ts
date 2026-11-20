@@ -59,15 +59,6 @@ export function validate(f: ProductFormState): FormErrors {
   return e;
 }
 
-/** Suggested base SKU: two letters of the brand + three consonant-ish letters of the name. */
-export function suggestBaseSku(brandName: string | undefined, productName: string): string {
-  const b = (brandName ?? 'XX').replace(/[^A-Za-z]/g, '').slice(0, 2).toUpperCase().padEnd(2, 'X');
-  const n = productName.split(/\s+/).filter(Boolean).map((w) => w[0] ?? '').join('').replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase();
-  return n ? `${b}-${n}` : '';
-}
-
-export const variantSku = (baseSku: string, size: string, color: string) => `${baseSku || 'SKU'}-${size.replace(/\s+/g, '')}-${color.slice(0, 3).toUpperCase()}`;
-
 export interface Cell { key: string; size: string; color: ColorRef }
 
 export interface Derived {

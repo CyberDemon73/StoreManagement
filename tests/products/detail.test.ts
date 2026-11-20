@@ -96,15 +96,17 @@ describe('PATCH /products/:id', () => {
       method: 'POST',
       path: '/api/v1/products',
       cookie,
-      body: { name: 'Other', brandId: brand.id, categoryId: category.id, defaultPrice: 1, baseSku: 'OT-HER' },
+      body: { name: 'Other', brandId: brand.id, categoryId: category.id, defaultPrice: 1 },
     });
     expect(other.status).toBe(201);
+    const taken = (await other.json()).baseSku as string;
+    expect(taken).toBe('NO-OTH');
     const ok = await call(PATCH, { method: 'PATCH', path: `/api/v1/products/${product.id}`, cookie, params: { id: product.id }, body: { baseSku: 'NEW-ONE' } });
     expect(ok.status).toBe(200);
     const body = await ok.json();
     expect(body.baseSku).toBe('NEW-ONE');
     expect(body.variants[0].sku).toBe('NO-CHI-S-BLACK');
-    const conflict = await call(PATCH, { method: 'PATCH', path: `/api/v1/products/${product.id}`, cookie, params: { id: product.id }, body: { baseSku: 'OT-HER' } });
+    const conflict = await call(PATCH, { method: 'PATCH', path: `/api/v1/products/${product.id}`, cookie, params: { id: product.id }, body: { baseSku: taken } });
     expect(conflict.status).toBe(409);
     expect((await conflict.json()).error.fields.baseSku).toBeDefined();
   });
@@ -151,5 +153,18 @@ describe('archive idempotence (review fix)', () => {
     expect(second.status).toBe(200);
     expect((await second.json()).status).toBe('ARCHIVED');
     expect(await db.select().from(auditLog)).toHaveLength(auditCount);
+  });
+});
+
+describe('PATCH baseSku rules', () => {
+  it('normalises case, accepts the product’s own current SKU, and rejects bad shapes', async () => {
+    const { product, cookie } = await fixture();
+    const same = await call(PATCH, { method: 'PATCH', path: `/api/v1/products/${product.id}`, cookie, params: { id: product.id }, body: { baseSku: 'no-chi' } });
+    expect(same.status).toBe(200);
+    expect((await same.json()).baseSku).toBe('NO-CHI');
+    for (const bad of ['A', 'NO CHI', 'NO_CHI', 'X'.repeat(41)]) {
+      const res = await call(PATCH, { method: 'PATCH', path: `/api/v1/products/${product.id}`, cookie, params: { id: product.id }, body: { baseSku: bad } });
+      expect(res.status, bad).toBe(400);
+    }
   });
 });

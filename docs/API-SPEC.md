@@ -27,7 +27,7 @@ Conventions
 | Method | Path | Perm | Notes |
 |---|---|---|---|
 | GET | /products | products.read | `q, brandId, categoryId, size, color, stock=in|low|out, minPrice, maxPrice, status, sort=name|updated|price|qty (+`-` for desc), page, pageSize`. Each item includes `brand`, `category`, `variantCount`, `totalQty`, `minPrice`, `maxPrice`, `lowStock: bool`, `coverImage` |
-| POST | /products | products.write | `{ name, brandId, categoryId, description?, baseSku?, images?, defaultCost?, defaultPrice, tags?, variants?: { sizes: string[], colors: {name,hex}[], initialQty?: number, costPrice?, sellPrice? } }` → creates product + matrix |
+| POST | /products | products.write | `{ name, brandId, categoryId, description?, images?, defaultCost?, defaultPrice, tags?, variants?: { sizes: string[], colors: {name,hex}[], initialQty?: number, costPrice?, sellPrice? } }` → creates product + matrix |
 | GET | /products/:id | products.read | includes `variants[]` |
 | PATCH | /products/:id | products.write | partial of POST body minus variants |
 | POST | /products/:id/archive | products.write | and `/unarchive` |

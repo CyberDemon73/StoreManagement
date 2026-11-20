@@ -35,12 +35,7 @@ export const productCreateBody = z
     brandId: uuidSchema,
     categoryId: uuidSchema,
     description: z.string().trim().max(2000).optional(),
-    baseSku: z
-      .string()
-      .trim()
-      .regex(/^[A-Za-z0-9-]{2,40}$/, 'Letters, digits and dashes only (2–40)')
-      .transform(upper)
-      .optional(),
+    // No baseSku here: the server generates it on create (see services/products.ts).
     images: z.array(z.string().url().startsWith('https://').max(500)).max(10).optional(),
     defaultCost: money.optional(),
     defaultPrice: money,
@@ -50,7 +45,14 @@ export const productCreateBody = z
   .strict();
 export type ProductCreateInput = z.infer<typeof productCreateBody>;
 
-export const productPatchBody = productCreateBody.omit({ variants: true }).partial().strict();
+/** Editing may still change the base SKU; existing variant SKUs stay as they are. */
+const baseSkuField = z
+  .string()
+  .trim()
+  .regex(/^[A-Za-z0-9-]{2,40}$/, 'Letters, digits and dashes only (2–40)')
+  .transform(upper);
+
+export const productPatchBody = productCreateBody.omit({ variants: true }).extend({ baseSku: baseSkuField }).partial().strict();
 export type ProductPatchInput = z.infer<typeof productPatchBody>;
 
 export const PRODUCT_SORTS = ['name', '-name', 'updated', '-updated', 'price', '-price', 'qty', '-qty'] as const;

@@ -171,7 +171,7 @@ export const api = {
     /** GET /products/:id */
     get: (id: string) => call<ProductDetail>(() => store.getProduct(id), 'GET', `/products/${id}`),
     /** POST /products */
-    create: (input: store.CreateProductInput) => call<ProductDetail>(() => store.createProduct(input, ctx.userId), 'POST', '/products', { ...input, images: httpsOnly(input.images), baseSku: input.baseSku || undefined, description: input.description || undefined }),
+    create: (input: store.CreateProductInput) => call<ProductDetail>(() => store.createProduct(input, ctx.userId), 'POST', '/products', { ...input, images: httpsOnly(input.images), description: input.description || undefined }),
     /** PATCH /products/:id */
     update: (id: string, patch: Partial<Omit<Product, 'id'>>) => call<ProductDetail>(() => store.updateProduct(id, patch, ctx.userId), 'PATCH', `/products/${id}`, { ...pick(patch, ['name', 'brandId', 'categoryId', 'description', 'baseSku', 'defaultCost', 'defaultPrice', 'tags']), ...(patch.images ? { images: httpsOnly(patch.images) } : {}) }),
     /** POST /products/:id/archive | /unarchive */

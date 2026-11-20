@@ -1,5 +1,6 @@
 import { count, eq } from 'drizzle-orm';
 import { describe, expect, it } from 'vitest';
+import { PATCH } from '@/app/api/v1/products/[id]/route';
 import { POST } from '@/app/api/v1/products/route';
 import { getDb } from '@/db/client';
 import { auditLog, products, stockMovements } from '@/db/schema';
@@ -92,34 +93,45 @@ describe('POST /products', () => {
     expect(audits[0]!.entityId).toBe(body.id);
   });
 
-  it('uppercases a supplied baseSku and creates no variants when the matrix is omitted', async () => {
-    const { brand, category, cookie } = await fixture();
+  it('rejects a client-supplied baseSku: the server always generates it', async () => {
+    const { db, brand, category, cookie } = await fixture();
     const res = await call(POST, {
       method: 'POST',
       path: '/api/v1/products',
       cookie,
       body: { name: 'Chino Slim', brandId: brand.id, categoryId: category.id, defaultPrice: 1000, baseSku: 'nl-chi' },
     });
+    expect(res.status).toBe(400);
+    expect(await db.select().from(products)).toHaveLength(0);
+  });
+
+  it('generates the base SKU and creates no variants when the matrix is omitted', async () => {
+    const { brand, category, cookie } = await fixture();
+    const res = await call(POST, {
+      method: 'POST',
+      path: '/api/v1/products',
+      cookie,
+      body: { name: 'Chino Slim', brandId: brand.id, categoryId: category.id, defaultPrice: 1000 },
+    });
     expect(res.status).toBe(201);
     const body = await res.json();
-    expect(body.baseSku).toBe('NL-CHI');
+    expect(body.baseSku).toBe('NO-CHI');
     expect(body.variants).toEqual([]);
     expect(body).toMatchObject({ variantCount: 0, totalQty: 0, minPrice: 1000, maxPrice: 1000, tint: '#E6E3DC' });
     expect(body.marginPct).toBeUndefined();
   });
 
-  it('returns 409 fields.baseSku on a duplicate base SKU and inserts nothing', async () => {
+  it('suffixes a colliding generated base SKU instead of failing, and keeps variant SKUs unique', async () => {
     const { db, brand, category, cookie } = await fixture();
     const body = { name: 'Chino Slim', brandId: brand.id, categoryId: category.id, defaultPrice: 1000, variants: matrix };
-    expect((await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body })).status).toBe(201);
-    const dup = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { ...body, name: 'Chino Wide', baseSku: 'NO-CHI' } });
-    expect(dup.status).toBe(409);
-    const err = await dup.json();
-    expect(err.error.code).toBe('CONFLICT');
-    expect(err.error.fields.baseSku).toBeDefined();
-    const [row] = await db.select({ n: count() }).from(products);
-    expect(row!.n).toBe(1);
-    expect(await db.select().from(stockMovements)).toHaveLength(1);
+    const first = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body });
+    expect((await first.json()).baseSku).toBe('NO-CHI');
+    const second = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { ...body, name: 'Chino Wide' } });
+    expect(second.status).toBe(201);
+    const created = await second.json();
+    expect(created.baseSku).toBe('NO-CHI2');
+    expect(created.variants.map((v: { sku: string }) => v.sku)).toContain('NO-CHI2-S-BLACK');
+    expect(await db.select().from(products)).toHaveLength(2);
   });
 
   it('returns 404 for an unknown brand and 400 for an unknown field', async () => {
@@ -161,5 +173,50 @@ describe('matrix SKU safety (review fixes)', () => {
     const empty = await call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { ...base, variants: { sizes: ['!!!'], colors: [{ name: 'Black', hex: '#000000' }] } } });
     expect(empty.status).toBe(400);
     expect(await db.select().from(products)).toHaveLength(0);
+  });
+});
+
+describe('generated base SKU under stress', () => {
+  const post = (cookie: string, brandId: string, categoryId: string, name: string) =>
+    call(POST, { method: 'POST', path: '/api/v1/products', cookie, body: { name, brandId, categoryId, defaultPrice: 1000 } });
+
+  it('numbers a run of identical names NO-CHI, NO-CHI2, NO-CHI3…', async () => {
+    const { brand, category, cookie } = await fixture();
+    const bases: string[] = [];
+    for (let i = 0; i < 4; i++) bases.push((await (await post(cookie, brand.id, category.id, 'Chino Slim')).json()).baseSku);
+    expect(bases).toEqual(['NO-CHI', 'NO-CHI2', 'NO-CHI3', 'NO-CHI4']);
+  });
+
+  it('skips a suffix already taken by a product edited by hand', async () => {
+    const { db, brand, category, cookie } = await fixture();
+    expect((await post(cookie, brand.id, category.id, 'Chino Slim')).status).toBe(201);
+    const other = await (await post(cookie, brand.id, category.id, 'Tee')).json();
+    const renamed = await call(PATCH, { method: 'PATCH', path: `/api/v1/products/${other.id}`, cookie, params: { id: other.id }, body: { baseSku: 'NO-CHI2' } });
+    expect(renamed.status).toBe(200);
+    const next = await (await post(cookie, brand.id, category.id, 'Chino Slim')).json();
+    expect(next.baseSku).toBe('NO-CHI3');
+    expect(await db.select().from(products)).toHaveLength(3);
+  });
+
+  it('never fails a create on a clash: concurrent creates of one name all succeed with distinct SKUs', async () => {
+    const { db, brand, category, cookie } = await fixture();
+    const results = await Promise.all(Array.from({ length: 6 }, () => post(cookie, brand.id, category.id, 'Chino Slim')));
+    const statuses = results.map((r) => r.status);
+    expect(statuses).toEqual(Array(6).fill(201));
+    const bases = (await Promise.all(results.map((r) => r.json()))).map((b) => b.baseSku);
+    expect(new Set(bases).size).toBe(6);
+    expect(await db.select().from(products)).toHaveLength(6);
+  });
+
+  it('gives a generated product variant SKUs built from its own suffixed base', async () => {
+    const { brand, category, cookie } = await fixture();
+    await post(cookie, brand.id, category.id, 'Chino Slim');
+    const res = await call(POST, {
+      method: 'POST', path: '/api/v1/products', cookie,
+      body: { name: 'Chino Slim', brandId: brand.id, categoryId: category.id, defaultPrice: 1000, variants: { sizes: ['32 W'], colors: [{ name: 'Navy Blue', hex: '#1f2a44' }] } },
+    });
+    const body = await res.json();
+    expect(body.baseSku).toBe('NO-CHI2');
+    expect(body.variants.map((v: { sku: string }) => v.sku)).toEqual(['NO-CHI2-32W-NAVYBLUE']);
   });
 });
